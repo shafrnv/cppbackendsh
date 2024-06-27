@@ -2,7 +2,8 @@
 #include <iostream>
 
 using namespace std::literals;
-
+void StartServer(uint16_t port){}
+void StartClient(uint16_t port){}
 int main(int argc, char** argv) {
     Recorder recorder(ma_format_u8, 1);
     Player player(ma_format_u8, 1);

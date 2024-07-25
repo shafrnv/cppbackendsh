@@ -4,6 +4,9 @@
 #include <iostream>
 #include <filesystem>
 #include <cassert>
+#include <locale>
+#include <string>
+#include <algorithm>
 #include <boost/beast.hpp>
 //#include <boost/filesystem.hpp>
 namespace http_handler {
@@ -37,7 +40,20 @@ public:
     {".mp3", "audio/mpeg"}
     };
 
-    std::string get_mime_type(const std::string& extension) {
+    bool IsSubPath(fs::path path, fs::path base) {
+        // Приводим оба пути к каноничному виду (без . и ..)    
+        // Проверяем, что все компоненты base содержатся внутри path
+        for (auto b = base.begin(), p = path.begin(); b != base.end(); ++b, ++p) {
+            if (p == path.end() || *p != *b) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    std::string get_mime_type(std::string extension) {
+        std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
         auto it = mime_types.find(extension);
         if (it != mime_types.end()) {
             return it->second;
@@ -53,21 +69,41 @@ public:
         auto target = req.target();
         std::string requested_path_in_str;
         if (target == "/") {
-            requested_path_in_str = path_ + "index.html";
+            requested_path_in_str = path_ + "/index.html";
         } else {
             auto decoded_url = url_decode(std::string(target.data(), target.size()));
             requested_path_in_str = path_ +decoded_url;
         }
         fs::path requested_path(requested_path_in_str);
-        cout << requested_path << endl;
-        cout << fs::path(requested_path_in_str).extension() << endl;
+        requested_path =  fs::weakly_canonical(requested_path);
+        fs::path root_path(path_);
+        root_path =  fs::weakly_canonical(root_path);
+        //Проверка на выход за корневой каталог
+        if (!IsSubPath(requested_path, root_path)) {
+            http::response<http::string_body> res{http::status::bad_request, req.version()};
+            res.set(http::field::content_type, "text/plain");
+            res.body() = "Error: Path outside of root directory.";
+            res.content_length(res.body().size());
+            res.keep_alive(req.keep_alive());
+            res.prepare_payload();
+            send(std::move(res));
+            return;
+        }
         http::file_body::value_type file;
         sys::error_code ec;
-        file.open(requested_path_in_str.c_str(), beast::file_mode::read, ec);
+        if (sys::error_code ec; file.open(requested_path_in_str.c_str(), beast::file_mode::read, ec), ec) {
+            http::response<http::string_body> res{http::status::not_found, req.version()};
+            res.set(http::field::content_type, "text/plain");
+            res.body() = "Error: File not found.";
+            res.content_length(res.body().size());
+            res.keep_alive(req.keep_alive());
+            res.prepare_payload();
+            send(std::move(res));
+            return;
+        }
         auto const size = file.size();
         http::response<http::file_body> res{http::status::ok, req.version()};
-        cout << get_mime_type(requested_path_in_str) << endl;
-        res.set(http::field::content_type, get_mime_type(fs::path(requested_path_in_str).extension()));
+        res.set(http::field::content_type, get_mime_type(requested_path.extension()));
         res.content_length(size);
         res.body() = std::move(file);
         res.keep_alive(req.keep_alive());

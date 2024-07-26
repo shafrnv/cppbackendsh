@@ -71,11 +71,9 @@ public:
     void Log(const Ts&... args) {
         std::lock_guard<std::mutex> lock(mutex_);
         OpenLogFile();
-        std::stringstream ss;
-        ss << GetTimeStamp() << ": ";
-        (ss << ... << args);
-        ss << std::endl;
-        log_file_ << ss.str();
+        log_file_ << GetTimeStamp() << ": "sv ;
+        (log_file_ << ... << args);
+        log_file_ << std::endl;
     }
 
     void SetTimestamp(std::chrono::system_clock::time_point ts) {

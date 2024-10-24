@@ -1,4 +1,3 @@
-# Создать образ на основе базового слоя gcc (там будет ОС и сам компилятор).
 # 11.3 — используемая версия gcc.
 FROM gcc:11.3 as build
 
@@ -31,7 +30,7 @@ USER www
 
 # Скопируем приложение со сборочного контейнера в директорию /app.
 # Не забываем также папку data, она пригодится.
-COPY --from=build /app/build/bin/game_server /app/
+COPY --from=build /app/build_release/bin/game_server /app/
 COPY ./data /app/data
 COPY ./static /app/static
 

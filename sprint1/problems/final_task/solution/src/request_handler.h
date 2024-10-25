@@ -50,7 +50,7 @@ private:
     }
 
     json::value toJson(const model::Road& road) {
-        json::object road_json {
+        json::object road_json{
             {"x0", road.GetStart().x},
             {"y0", road.GetStart().y}
         };
@@ -63,6 +63,7 @@ private:
 
         return road_json;
     }
+
     json::value toJson(const model::Building& building) {
         const auto& bounds = building.GetBounds();
         return json::object{
@@ -75,7 +76,7 @@ private:
 
     json::value toJson(const model::Office& office) {
         const auto& position = office.GetPosition();
-        const auto & offset = office.GetOffset();
+        const auto& offset = office.GetOffset();
         return json::object{
             {"id", *office.GetId()},
             {"x", position.x},
@@ -87,26 +88,31 @@ private:
 
     json::value toJson(const std::vector<model::Road>& roads) {
         json::array roads_json;
-        for (const model::Road road : roads) {
-            roads_json.push_back(toJson(road));
-        }
+        std::transform(roads.begin(), roads.end(), std::back_inserter(roads_json),
+            [this](const model::Road& road) {
+                return toJson(road);
+            }
+        );
         return roads_json;
     }
 
     json::value toJson(const std::vector<model::Building>& buildings) {
         json::array buildings_json;
-        for (const model::Building& building : buildings) {
-            buildings_json.push_back(toJson(building));
-        }
+        std::transform(buildings.begin(), buildings.end(), std::back_inserter(buildings_json),
+            [this](const model::Building& building) {
+                return toJson(building);
+            }
+        );
         return buildings_json;
     }
 
     json::value toJson(const std::vector<model::Office>& offices) {
         json::array offices_json;
-        for (const model::Office& office : offices) {
-            offices_json.push_back(toJson(office));
-        }
-
+        std::transform(offices.begin(), offices.end(), std::back_inserter(offices_json),
+            [this](const model::Office& office) {
+                return toJson(office);
+            }
+        );
         return offices_json;
     }
 

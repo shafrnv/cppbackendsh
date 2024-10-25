@@ -4,33 +4,10 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <random>
+
 #include "tagged.h"
 
 namespace model {
-
-namespace detail {
-struct TokenTag {};
-}  // namespace detail
-
-using Token = util::Tagged<std::string, detail::TokenTag>;
-
-class PlayerTokens {
-private:
-    std::random_device random_device_;
-    std::mt19937_64 generator1_{[this] {
-        std::uniform_int_distribution<std::mt19937_64::result_type> dist;
-        return dist(random_device_);
-    }()};
-    std::mt19937_64 generator2_{[this] {
-        std::uniform_int_distribution<std::mt19937_64::result_type> dist;
-        return dist(random_device_);
-    }()};
-    // Чтобы сгенерировать токен, получите из generator1_ и generator2_
-    // два 64-разрядных числа и, переведя их в hex-строки, склейте в одну.
-    // Вы можете поэкспериментировать с алгоритмом генерирования токенов,
-    // чтобы сделать их подбор ещё более затруднительным
-}; 
 
 using Dimension = int;
 using Coord = Dimension;
@@ -188,32 +165,10 @@ private:
     Roads roads_;
     Buildings buildings_;
 
-    OfficeIdToIndex warehou se_id_to_index_;
+    OfficeIdToIndex warehouse_id_to_index_;
     Offices offices_;
 };
-class Dog{
-public:
-    using Id = util::Tagged<std::string, Map>;
-    Dog(Id id)
-        : id_{std::move(id)} {}
-private:
-Id id_;
-};
 
-class Player{
-private:
-    GameSession session_;
-    Dog dog_;
-    Token token_;
-};
-class Players{
-public:
-    void addPlayer(Player player);
-    void findByDogIdAndMapId(Dog::Id& dog_id, Map::Id& map_id);
-    void findByToken(Token& token);
-private:
-    std::vector<Player> players_;
-};
 class Game {
 public:
     using Maps = std::vector<Map>;
@@ -238,7 +193,5 @@ private:
     std::vector<Map> maps_;
     MapIdToIndex map_id_to_index_;
 };
-class GameSession {
 
-};
 }  // namespace model

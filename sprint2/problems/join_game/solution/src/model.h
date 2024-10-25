@@ -201,7 +201,7 @@ public:
 };
 class Dog{
 public:
-    using Id = util::Tagged<std::string, Dog>;
+    using Id = util::Tagged<int, Dog>;
     Dog(Id id, std::string name) noexcept
         : id_(std::move(id)), name_(std::move(name)) {}
     const Id& GetId() const noexcept {
@@ -230,7 +230,7 @@ public:
     const Dogs& GetDogs() const noexcept {
         return dogs_;
     }
-    Dog AddDog(std::string name);
+    Dog& AddDog(std::string name);
 private:
     Id id_;
     using DogIdHasher = util::TaggedHasher<Dog::Id>;
@@ -243,7 +243,7 @@ private:
 
 class Player{
 public:  
-    Player(const GameSession& session, Dog dog, Token token)
+    Player(GameSession& session, Dog& dog, Token token)
         : session_(session), dog_(dog), token_(std::move(token)) {}
 
     const GameSession& GetSession() const noexcept {
@@ -256,8 +256,8 @@ public:
         return token_;
     }
 private:
-    GameSession session_;
-    Dog dog_;
+    GameSession& session_;
+    Dog& dog_;
     Token token_;
     
 };

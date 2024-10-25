@@ -119,8 +119,6 @@ public:
                 handleGetMaps(std::move(req), std::move(send));
             } else if (req.method() == http::verb::get && req.target().starts_with("/api/v1/maps/")) {
                 handleGetMapById(std::move(req), std::move(send));
-            } else if (req.method() == http::verb::post && req.target() == "/api/v1/game/join") {
-                handleJoinToGame(std::move(req), std::move(send));
             } else if (req.target().starts_with("/api/")) {
                 send(badRequest(std::move(req)));
             } else {    
@@ -293,11 +291,6 @@ private:
         res.keep_alive(req.keep_alive());
         res.body() = json::serialize(json_response);
         return res;
-    }
-
-    template <typename Body, typename Allocator, typename Send>
-    void handleJoinToGame(http::request<Body, http::basic_fields<Allocator>>&& req, Send&& send){
-        
     }
     model::Game& game_;
     std::string path_;

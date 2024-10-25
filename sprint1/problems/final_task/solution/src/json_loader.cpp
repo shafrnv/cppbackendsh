@@ -16,47 +16,46 @@ Road ParseRoadFromJson(const json::object& road_obj) {
         throw std::runtime_error("Недопустимый формат дороги в JSON");
     }
 }
-const std::string kX = "x";
-const std::string kY = "y";
-const std::string kW = "w";
-const std::string kH = "h";
-const std::string kId = "id";
-const std::string kOffsetX = "offsetX";
-const std::string kOffsetY = "offsetY";
-
 Building ParseBuildingFromJson(const json::object& rect_obj) {
-    Point position{Dimension(rect_obj.at(kX).as_int64()), Dimension(rect_obj.at(kY).as_int64())};
-    Size size{Dimension(rect_obj.at(kW).as_int64()), Dimension(rect_obj.at(kH).as_int64())};
+    Point position{Dimension(rect_obj.at("x").as_int64()), Dimension(rect_obj.at("y").as_int64())};
+    Size size{Dimension(rect_obj.at("w").as_int64()), Dimension(rect_obj.at("h").as_int64())};
 
     Rectangle bounds = Rectangle{position, size};
     return Building(bounds);
 }
 
 Office ParseOfficeFromJson(const json::object& office_obj) {
-    Office::Id id{office_obj.at(kId).as_string().c_str()};
-    Point position{Dimension(office_obj.at(kX).as_int64()), Dimension(office_obj.at(kY).as_int64())};
-    Offset offset{Dimension(office_obj.at(kOffsetX).as_int64()), Dimension(office_obj.at(kOffsetY).as_int64())};
+    Office::Id id{office_obj.at("id").as_string().c_str()};
+    Point position{Dimension(office_obj.at("x").as_int64()), Dimension(office_obj.at("y").as_int64())};
+    Offset offset{Dimension(office_obj.at("offsetX").as_int64()), Dimension(office_obj.at("offsetY").as_int64())};
     return Office(id, position, offset);
 }
-
 
 model::Game LoadGame(const std::filesystem::path& json_path) {
     
     model::Game game;
+    // Загрузить содержимое файла json_path, например, в виде строки
     
-    // Открываем файл, с конфигом игры
+    // Открываем файл
     std::ifstream file(json_path);
     if (!file.is_open()) {
         throw std::runtime_error("Не удалось открыть файл " + json_path.string());
     }
     
+    // Читаем содержимое файла в строку
     std::string json_str((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    
+    //Закрываем файл
     file.close();
+    
+    // Распарсить строку как JSON, используя boost::json::parse
+
+    //Парсим JSON строку
     json::value json_value = json::parse(json_str);
 
+    // Получить объект JSON
     json::object json_object = json_value.as_object();
     
-    // Загрузить модель игры из json
     if (json_object.contains("maps")){
         json::array json_maps = json_object["maps"].as_array();
         for (const json::value& json_map : json_maps) {

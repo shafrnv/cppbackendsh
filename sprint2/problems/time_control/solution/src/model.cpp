@@ -37,11 +37,11 @@ void Game::AddMap(Map map) {
 Dog& GameSession::AddDog(std::string name, const Road& road, const Speed& dog_speed_initial) {
     size_t index = dogs_.size();
     model::Dog::Id dog_id{index};
-    Coordinate random_coordinate;
+    Coordinate random_coordinate ={0,0};
 
     std::random_device rd;
     std::mt19937 gen(rd());
-    
+    /*
     if (road.IsHorizontal()) {
         // Если дорога горизонтальная, выбираем случайную координату по оси X между start и end
         std::uniform_real_distribution<> dis_x(road.GetStart().x, road.GetEnd().x);
@@ -52,7 +52,7 @@ Dog& GameSession::AddDog(std::string name, const Road& road, const Speed& dog_sp
         std::uniform_real_distribution<> dis_y(road.GetStart().y, road.GetEnd().y);
         random_coordinate.y = dis_y(gen);
         random_coordinate.x = road.GetStart().x;  // x остаётся неизменным
-    }
+    }*/
 
     // Направление пса по умолчанию — север
     Direction initial_direction = Direction::NORTH;
@@ -86,7 +86,7 @@ Player& Players::AddPlayer(std::string dog, GameSession* session) {
     std::mt19937 gen(rd());
     auto roads_count = session->GetMap().GetRoads().size();
     std::uniform_int_distribution<> dis(0, roads_count - 1);
-    const  Road& road = session->GetMap().GetRoads()[dis(gen)];
+    const  Road& road = session->GetMap().GetRoads()[0/*dis(gen)*/];
     Player player_(*session, session->AddDog(dog, road,session->GetMap().GetSpeed()), token);
     players_.emplace_back(std::move(player_));
     Player& addedPlayer = players_.back();

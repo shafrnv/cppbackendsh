@@ -6,6 +6,7 @@
 #include <vector>
 #include <random>
 #include <iostream>  // for debugging
+#include <algorithm>
 #include "tagged.h"
 
 namespace detail {
@@ -246,8 +247,11 @@ public:
     }const std::string& GetName() const noexcept {
         return name_;
     }
-    void SetCoordinate(const Coordinate& coord) noexcept {
-        coordinate_ = coord;
+    void SetCoordinateX(double coord) noexcept {
+        coordinate_.x = coord;
+    }
+    void SetCoordinateY(double coord) noexcept {
+        coordinate_.y = coord;
     }
     void SetSpeed(const Speed& speed) noexcept {
         speed_ = speed;
@@ -274,16 +278,27 @@ public:
             return "D";
         }
     }
+    const Direction& GetDirectionENUM() const noexcept {
+        return direction_;
+    }
 
-    const Road* GetCurrentRoad(const std::vector<Road>& roads) const {
+    const Road* GetCurrentRoad(const std::vector<Road>& roads, const Coordinate& coordinate) const {
         for (const auto& road : roads) {
-            if (road.IsHorizontal() && (coordinate_.y <= road.GetStart().y + 0.4 && coordinate_.y >= road.GetStart().y - 0.4) &&
-                coordinate_.x >= road.GetStart().x - 0.4 && coordinate_.x <= road.GetEnd().x + 0.4) {
-                return &road;
+            if (road.IsHorizontal()){
+                double max_coord_cur_x =std::max(road.GetStart().x,road.GetEnd().x); 
+                double min_coord_cur_x =std::min(road.GetStart().x,road.GetEnd().x); 
+                if ((coordinate.y <= road.GetStart().y + 0.4 && coordinate.y >= road.GetStart().y - 0.4) &&
+                    coordinate.x >= min_coord_cur_x - 0.4 && coordinate.x <= max_coord_cur_x + 0.4) {
+                    return &road;
+                }
             }
-            if (road.IsVertical() && (coordinate_.x <= road.GetStart().x + 0.4 && coordinate_.x >= road.GetStart().x - 0.4) &&
-                coordinate_.y >= road.GetStart().y - 0.4 && coordinate_.y <= road.GetEnd().y+0.4) {
-                return &road;
+            if (road.IsVertical()){
+                double max_coord_cur_y =std::max(road.GetStart().y,road.GetEnd().y); 
+                double min_coord_cur_y =std::min(road.GetStart().y,road.GetEnd().y); 
+                if ((coordinate.x <= road.GetStart().x + 0.4 && coordinate.x >= road.GetStart().x - 0.4) &&
+                    coordinate.y >= min_coord_cur_y - 0.4 && coordinate.y <= max_coord_cur_y +0.4) {
+                    return &road;
+                }
             }
         return nullptr; // Собака не на дороге
         }

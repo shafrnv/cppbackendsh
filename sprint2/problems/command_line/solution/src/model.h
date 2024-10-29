@@ -364,7 +364,7 @@ private:
 };
 class Players{
 public:
-    static Player& AddPlayer(std::string dog_name, GameSession* session);
+    static Player& AddPlayer(std::string dog_name, GameSession* session, bool random_coords);
     static Player* findPlayerByToken(Token& token);
     static std::vector<Player> players_;
 private:

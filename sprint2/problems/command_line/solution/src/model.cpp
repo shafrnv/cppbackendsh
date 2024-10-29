@@ -79,20 +79,25 @@ GameSession& Game::AddGameSession(const Map& map_) {
     return sessions_.back();
 }
 std::vector<Player> Players::players_;
-Player& Players::AddPlayer(std::string dog_name, GameSession* session) {
+Player& Players::AddPlayer(std::string dog_name, GameSession* session, bool random_points) {
     PlayerTokens pltk_;
     Token token = pltk_.generateToken();
-    
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    auto roads_count = session->GetMap().GetRoads().size();
-    std::uniform_int_distribution<> dis(0, static_cast<int>(roads_count - 1));
-    const  Road& road = session->GetMap().GetRoads()[0/*dis(gen)*/];
-    auto dog = session->AddDog(dog_name, road, model::Speed(0,0));
-    Player player_(*session, dog, token);
-    players_.emplace_back(std::move(player_));
-    Player& addedPlayer = players_.back();
-    return addedPlayer;
+    if (random_points) {
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        auto roads_count = session->GetMap().GetRoads().size();
+        std::uniform_int_distribution<> dis(0, static_cast<int>(roads_count - 1));
+        const  Road& road = session->GetMap().GetRoads()[dis(gen)];
+        auto dog = session->AddDog(dog_name, road, model::Speed(0,0));
+        Player player_(*session, dog, token);
+        players_.emplace_back(std::move(player_));
+    } else {
+        const  Road& road = session->GetMap().GetRoads()[0];
+        auto dog = session->AddDog(dog_name, road, model::Speed(0,0));
+        Player player_(*session, dog, token);
+        players_.emplace_back(std::move(player_));
+    }
+    return players_.back();
 } 
 
 Player* Players::findPlayerByToken(Token& token) {

@@ -50,8 +50,9 @@ int main(int argc, const char* argv[]) {
                 ioc.stop();
             }
         });
+        boost::asio::strand<boost::asio::io_context::executor_type> strand(ioc.get_executor());
         // 4. Создаём обработчик HTTP-запросов и связываем его с моделью игры
-        http_handler::RequestHandler handler{game,static_files_root};
+        http_handler::RequestHandler handler{game,static_files_root,strand};
 
         // 5. Запустить обработчик HTTP-запросов, делегируя их обработчику запросов
         const auto address = net::ip::make_address("0.0.0.0");

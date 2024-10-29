@@ -20,9 +20,10 @@ using namespace std;
 class RequestHandler {
 public:
     
-    explicit RequestHandler(model::Game& game, std::string path_static, boost::asio::strand<boost::asio::io_context::executor_type>& strand)
+    explicit RequestHandler(model::Game& game, std::string path_static, bool random_spawn, boost::asio::strand<boost::asio::io_context::executor_type>& strand)
         : game_{game},
         path_{path_static},
+        random_spawn_{random_spawn},
         strand_{strand} { }
     
     std::unordered_map<std::string, std::string> mime_types = {
@@ -165,54 +166,11 @@ public:
     void operator()(http::request<Body, http::basic_fields<Allocator>>&& req, Send&& send) {
         handleRequestWithStrand(std::move(req), std::move(send), strand_);
     }
-    
-    // template <typename Body, typename Allocator, typename Send>
-    // void operator()(http::request<Body, http::basic_fields<Allocator>>&& req, Send&& send) {
-    //     try {
-    //         // Обработаем запрос и сформируем соответствующий ответ
-    //         if (req.method() == http::verb::get && req.target() == "/api/v1/maps") {
-    //             handleGetMaps(std::move(req), std::move(send));
-    //         } else if (req.method() == http::verb::get && req.target().starts_with("/api/v1/maps/")) {
-    //             handleGetMapById(std::move(req), std::move(send));
-    //         } else if (req.target() == "/api/v1/game/join") {
-    //             if (req.method() == http::verb::post){
-    //                 handleJoinGame(std::move(req), std::move(send));
-    //             } else {
-    //                 send(badMethodNotPost(std::move(req)));
-    //             }
-    //         } else if (req.target() == "/api/v1/game/players") {
-    //              if (!(req.method() == http::verb::get || req.method() == http::verb::head)) {
-    //                 send(badMethodNotGetOrHead(std::move(req)));
-    //             } else{
-    //                 handleGetPlayers(std::move(req), std::move(send));
-    //             }
-    //         }else if (req.target() == "/api/v1/game/state") {
-    //             if (!(req.method() == http::verb::get || req.method() == http::verb::head)) {
-    //                 send(badMethodNotGetOrHead(std::move(req)));
-    //             } else{
-    //                 handleGetStateInformation(std::move(req), std::move(send));
-    //             }
-    //         }else if (req.target() == "/api/v1/game/player/action") {
-    //             if (req.method() == http::verb::post){
-    //                 handleAction(std::move(req), std::move(send));
-    //             } else {
-    //                 send(badMethodNotPost(std::move(req)));
-    //             }
-    //         } else if (req.target() == "/api/v1/game/tick") {
-    //             //if (req.method() == http::verb::post){
-    //                 handleMovesTick(std::move(req), std::move(send));
-    //             // } else {
-    //             //     send(badMethodNotPost(std::move(req)));
-    //             // }
-    //         }else if (req.target().starts_with("/api/")) {
-    //             send(badRequest(std::move(req)));
-    //         } else {    
-    //             handleRequest(std::move(req), std::move(send));
-    //         }
-    //     } catch (std::exception& e) {
-    //         std::cerr << "Error handling request: " << e.what() << std::endl;
-    //     }   
-    // }
+    void Tick(std::chrono::milliseconds delta){
+        int millisecondsAsInt = static_cast<int>(delta.count());
+        std::cout << millisecondsAsInt << std::endl;
+        UpdateCoords(millisecondsAsInt*0.001, game_.GetGameSessions());
+    }
 private:
     std::string url_decode(const std::string& s) {
         std::string result;
@@ -351,7 +309,7 @@ private:
         }
         
         if (auto session_yet = game_.FindGameSessionByMap(*map); session_yet) {
-            auto& player_ = model::Players::AddPlayer(name,session_yet);
+            auto& player_ = model::Players::AddPlayer(name,session_yet,random_spawn_);
             json::object player_json{
                 {"authToken",  *(player_.GetToken())},
                 {"playerId", *(player_.GetDog()->GetId())}
@@ -363,7 +321,7 @@ private:
             std::cout<<"of no"<< std::endl;
             auto& new_session = game_.AddGameSession(*map);
             std::cout<<"new: " << *(new_session.GetId())<<std::endl;
-            auto& player_ = model::Players::AddPlayer(name, &new_session);
+            auto& player_ = model::Players::AddPlayer(name, &new_session, random_spawn_);
             json::object player_json{
                 {"authToken",  *(player_.GetToken())},
                 {"playerId", *(player_.GetDog()->GetId())}
@@ -499,19 +457,8 @@ private:
                 sendResponseToAuth(std::move(req), std::move(send), response); 
             }
     }
-    template <typename Body, typename Allocator, typename Send>
-    void handleMovesTick(http::request<Body, http::basic_fields<Allocator>>&& req, Send&& send) {
-        json::error_code ec;
-        auto json_body = json::parse(req.body(),ec);
-        if (ec) {
-            send(badParse(std::move(req)));
-            return;
-        }
-        if (!json_body.as_object().contains("timeDelta") || !json_body.at("timeDelta").is_int64()) {
-            send(badTickParse(std::move(req)));
-            return; 
-        }
-        auto time_delta = (json_body.at("timeDelta").as_int64()) * 0.001;
+
+    void UpdateCoords(double time_delta, model::Game::GameSessions& session) {
         for (auto& session : game_.GetGameSessions()) {
             for (auto& dog_ : session.GetDogs()) {
                 auto dog = dog_.get();
@@ -711,9 +658,29 @@ private:
                 }
             }
         }
+    }
+
+    
+    template <typename Body, typename Allocator, typename Send>
+    void handleMovesTick(http::request<Body, http::basic_fields<Allocator>>&& req, Send&& send) {
+        json::error_code ec;
+        auto json_body = json::parse(req.body(),ec);
+        if (ec) {
+            send(badParse(std::move(req)));
+            return;
+        }
+        if (!json_body.as_object().contains("timeDelta") || !json_body.at("timeDelta").is_int64()) {
+            send(badTickParse(std::move(req)));
+            return; 
+        }
+        auto time_delta = (json_body.at("timeDelta").as_int64()) * 0.001;
+        std::cout << time_delta << std::endl;
+        UpdateCoords(time_delta, game_.GetGameSessions());
         json::object response;
         sendResponseToAuth(std::move(req), std::move(send), response);
     }
+
+    
     template <typename Body, typename Allocator, typename Send>
     void handleGetMapById(http::request<Body, http::basic_fields<Allocator>>&& req, Send&& send) {
         std::string target_str = std::string(req.target().substr(std::strlen("/api/v1/maps/")));
@@ -920,6 +887,7 @@ private:
 
     model::Game& game_;
     std::string path_;
+    bool random_spawn_;
     boost::asio::strand<boost::asio::io_context::executor_type>& strand_;
 };
     

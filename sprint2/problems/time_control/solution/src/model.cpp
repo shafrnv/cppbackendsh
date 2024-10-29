@@ -34,9 +34,9 @@ void Game::AddMap(Map map) {
         }
     }
 }
-Dog& GameSession::AddDog(std::string name, const Road& road, const Speed& dog_speed_initial) {
+GameSession::DogPointer GameSession::AddDog(std::string name, const Road& road, const Speed& dog_speed_initial) {
     size_t index = dogs_.size();
-    model::Dog::Id dog_id{index};
+    model::Dog::Id dog_id{ static_cast<int>(index)};
     Coordinate random_coordinate ={0,0};
 
     std::random_device rd;
@@ -56,15 +56,15 @@ Dog& GameSession::AddDog(std::string name, const Road& road, const Speed& dog_sp
 
     // Направление пса по умолчанию — север
     Direction initial_direction = Direction::NORTH;
-    Dog dog(dog_id, name,random_coordinate, dog_speed_initial, initial_direction);
+    auto dog = std::make_shared<Dog>(dog_id, name,random_coordinate, dog_speed_initial, initial_direction);
     // std::cout<<"initial coord"<<road.GetStart().x <<" "<<road.GetStart().y<<std::endl<<road.GetEnd().x<<" "<<road.GetEnd().y<<std::endl;
     // std::cout<<"Random coord"<<random_coordinate.x<<" "<<random_coordinate.y<<std::endl;
-    if (auto [it, inserted] = dog_id_to_index_.emplace(dog.GetId(), index); !inserted) {
-        throw std::invalid_argument("Dog with id "s + std::to_string(*dog.GetId()) + " already exists"s);
+    if (auto [it, inserted] = dog_id_to_index_.emplace(dog.get()->GetId(), index); !inserted) {
+        throw std::invalid_argument("Dog with id "s + std::to_string(*dog.get()->GetId()) + " already exists"s);
      } else {
         try {
             dogs_.emplace_back(dog);
-            return dogs_.back();   
+            return dog;   
         } catch (...) {
             dog_id_to_index_.erase(it);
             throw;
@@ -79,15 +79,17 @@ GameSession& Game::AddGameSession(const Map& map_) {
     return sessions_.back();
 }
 std::vector<Player> Players::players_;
-Player& Players::AddPlayer(std::string dog, GameSession* session) {
+Player& Players::AddPlayer(std::string dog_name, GameSession* session) {
     PlayerTokens pltk_;
     Token token = pltk_.generateToken();
+    
     std::random_device rd;
     std::mt19937 gen(rd());
     auto roads_count = session->GetMap().GetRoads().size();
-    std::uniform_int_distribution<> dis(0, roads_count - 1);
+    std::uniform_int_distribution<> dis(0, static_cast<int>(roads_count - 1));
     const  Road& road = session->GetMap().GetRoads()[0/*dis(gen)*/];
-    Player player_(*session, session->AddDog(dog, road,session->GetMap().GetSpeed()), token);
+    auto dog = session->AddDog(dog_name, road, model::Speed(0,0));
+    Player player_(*session, dog, token);
     players_.emplace_back(std::move(player_));
     Player& addedPlayer = players_.back();
     return addedPlayer;

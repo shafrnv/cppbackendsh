@@ -6,7 +6,6 @@
 #include <iostream>
 #include <locale>
 #include <string>
-#include <algorithm>
 #include <boost/beast.hpp>
 //#include <boost/filesystem.hpp>
 
@@ -21,9 +20,10 @@ using namespace std;
 class RequestHandler {
 public:
     
-    explicit RequestHandler(model::Game& game, std::string path_static)
+    explicit RequestHandler(model::Game& game, std::string path_static, boost::asio::strand<boost::asio::io_context::executor_type>& strand)
         : game_{game},
-        path_{path_static} { }
+        path_{path_static},
+        strand_{strand} { }
     
     std::unordered_map<std::string, std::string> mime_types = {
     {".htm", "text/html"}, {".html", "text/html"}, 
@@ -105,13 +105,62 @@ public:
         }
         auto const size = file.size();
         http::response<http::file_body> res{http::status::ok, req.version()};
-        res.set(http::field::content_type, get_mime_type(requested_path.extension()));
+        res.set(http::field::content_type, get_mime_type(requested_path.extension().string()));
         res.content_length(size);
         res.body() = std::move(file);
         res.keep_alive(req.keep_alive());
         res.prepare_payload();
         send(std::move(res));
     }
+    // template <typename Body, typename Allocator, typename Send>
+    // void handleRequestWithStrand(http::request<Body, http::basic_fields<Allocator>>&& req, Send&& send, boost::asio::strand<boost::asio::io_context::executor_type>& strand) {
+    //     boost::asio::dispatch(strand, [this, req = std::move(req), send = std::move(send), strand]() mutable {
+    //         try {
+    //             // Обработаем запрос и сформируем соответствующий ответ
+    //             if (req.method() == http::verb::get && req.target() == "/api/v1/maps") {
+    //                 handleGetMaps(std::move(req), std::move(send));
+    //             } else if (req.method() == http::verb::get && req.target().starts_with("/api/v1/maps/")) {
+    //                 handleGetMapById(std::move(req), std::move(send));
+    //             } else if (req.target() == "/api/v1/game/join") {
+    //                 if (req.method() == http::verb::post){
+    //                     handleJoinGame(std::move(req), std::move(send));
+    //                 } else {
+    //                     send(badMethodNotPost(std::move(req)));
+    //                 }
+    //             } else if (req.target() == "/api/v1/game/players") {
+    //                 if (!(req.method() == http::verb::get || req.method() == http::verb::head)) {
+    //                     send(badMethodNotGetOrHead(std::move(req)));
+    //                 } else{
+    //                     handleGetPlayers(std::move(req), std::move(send));
+    //                 }
+    //             }else if (req.target() == "/api/v1/game/state") {
+    //                 if (!(req.method() == http::verb::get || req.method() == http::verb::head)) {
+    //                     send(badMethodNotGetOrHead(std::move(req)));
+    //                 } else{
+    //                     handleGetStateInformation(std::move(req), std::move(send));
+    //                 }
+    //             }else if (req.target() == "/api/v1/game/player/action") {
+    //                 if (req.method() == http::verb::post){
+    //                     handleAction(std::move(req), std::move(send));
+    //                 } else {
+    //                     send(badMethodNotPost(std::move(req)));
+    //                 }
+    //             } else if (req.target() == "/api/v1/game/tick") {
+    //                 handleMovesTick(std::move(req), std::move(send));
+    //             }else if (req.target().starts_with("/api/")) {
+    //                 send(badRequest(std::move(req)));
+    //             } else {    
+    //                 handleRequest(std::move(req), std::move(send));
+    //             }
+    //         } catch (std::exception& e) {
+    //             std::cerr << "Error handling request: " << e.what() << std::endl;
+    //         }        
+    //     });
+    // }
+    // template <typename Body, typename Allocator, typename Send>
+    // void operator()(http::request<Body, http::basic_fields<Allocator>>&& req, Send&& send) {
+    //     handleRequestWithStrand(std::move(req), std::move(send), strand_);
+    // }
     
     template <typename Body, typename Allocator, typename Send>
     void operator()(http::request<Body, http::basic_fields<Allocator>>&& req, Send&& send) {
@@ -139,6 +188,18 @@ public:
                 } else{
                     handleGetStateInformation(std::move(req), std::move(send));
                 }
+            }else if (req.target() == "/api/v1/game/player/action") {
+                if (req.method() == http::verb::post){
+                    handleAction(std::move(req), std::move(send));
+                } else {
+                    send(badMethodNotPost(std::move(req)));
+                }
+            } else if (req.target() == "/api/v1/game/tick") {
+                //if (req.method() == http::verb::post){
+                    handleMovesTick(std::move(req), std::move(send));
+                // } else {
+                //     send(badMethodNotPost(std::move(req)));
+                // }
             }else if (req.target().starts_with("/api/")) {
                 send(badRequest(std::move(req)));
             } else {    
@@ -287,7 +348,7 @@ private:
         
         if (auto session_yet = game_.FindGameSessionByMap(*map); session_yet) {
             std::cout<<"yet: " << *(session_yet->GetId())<<std::endl;
-            auto player_ = model::Players::AddPlayer(name,session_yet);
+            auto& player_ = model::Players::AddPlayer(name,session_yet);
             std::cout<<"yet dog id: " << *(player_.GetDog().GetId())<<std::endl;
             std::cout<< "Token"<< *(player_.GetToken())<<std::endl;
             json::object player_json{
@@ -301,7 +362,7 @@ private:
             std::cout<<"of no"<< std::endl;
             auto& new_session = game_.AddGameSession(*map);
             std::cout<<"new: " << *(new_session.GetId())<<std::endl;
-            auto player_ = model::Players::AddPlayer(name, &new_session);
+            auto& player_ = model::Players::AddPlayer(name, &new_session);
             
             json::object player_json{
                 {"authToken",  *(player_.GetToken())},
@@ -318,7 +379,6 @@ private:
         }
         auto auth_header = req["Authorization"];
         const std::string bearer_prefix = "Bearer ";
-        // Проверка, начинается ли заголовок с "Bearer "
         if (auth_header.size() <= bearer_prefix.size() ||
             auth_header.substr(0, bearer_prefix.size()) != bearer_prefix) 
         {
@@ -326,7 +386,6 @@ private:
             return;
         }
         std::string token_str = std::string(auth_header.substr(bearer_prefix.size()));
-        // Проверка, что токен не пустой и имеет длину 32 символа
         if (token_str.empty() || token_str.size() != 32) {
             send(invalidAuthHeaderToAuth(std::move(req)));
             return;
@@ -355,7 +414,6 @@ private:
         }
         auto auth_header = req["Authorization"];
         const std::string bearer_prefix = "Bearer ";
-        // Проверка, начинается ли заголовок с "Bearer "
         if (auth_header.size() <= bearer_prefix.size() ||
             auth_header.substr(0, bearer_prefix.size()) != bearer_prefix) 
         {
@@ -363,7 +421,6 @@ private:
             return;
         }
         std::string token_str = std::string(auth_header.substr(bearer_prefix.size()));
-        // Проверка, что токен не пустой и имеет длину 32 символа
         if (token_str.empty() || token_str.size() != 32) {
             send(invalidAuthHeaderToAuth(std::move(req)));
             return;
@@ -374,15 +431,282 @@ private:
                 send(badToken(std::move(req)));
             } else {
             json::object players;
-            int index = 0;
             for(auto& dog :player_->GetSession().GetDogs()){
-                cout << index << dog.GetName() << endl;
-                players[std::to_string(index++)] =json::object{
-                    {"name", dog.GetName()}
+                players[std::to_string(*(dog.GetId()))] = json::object{
+                    {"pos", json::array{dog.GetCoordinate().x, dog.GetCoordinate().y}},
+                    {"speed",json::array{ dog.GetSpeed().vx, dog.GetSpeed().vy}},
+                    {"dir", dog.GetDirection()}
                     };
             }
-            sendResponseToAuth(std::move(req), std::move(send), players);
+            json::object response;
+            response["players"] = players;
+            sendResponseToAuth(std::move(req), std::move(send), response); 
             } 
+    }
+    template <typename Body, typename Allocator, typename Send>
+    void handleAction(http::request<Body, http::basic_fields<Allocator>>&& req, Send&& send) {
+        if (req.find("Authorization")==req.end()) {
+            send(missingAuthHeaderToAuth(std::move(req)));
+            return;
+        }
+        auto auth_header = req["Authorization"];
+        const std::string bearer_prefix = "Bearer ";
+        if (auth_header.size() <= bearer_prefix.size() ||
+            auth_header.substr(0, bearer_prefix.size()) != bearer_prefix) 
+        {
+            send(invalidAuthHeaderToAuth(std::move(req)));
+            return;
+        }
+        std::string token_str = std::string(auth_header.substr(bearer_prefix.size()));
+        if (token_str.empty() || token_str.size() != 32) {
+            send(invalidAuthHeaderToAuth(std::move(req)));
+            return;
+        }
+            Token token{token_str};
+            auto player_ = model::Players::findPlayerByToken(token);
+            if (!player_) {
+                send(badToken(std::move(req)));
+                return;
+            } else {
+                json::error_code ec;
+                auto json_body = json::parse(req.body(),ec);
+                if (ec) {
+                    send(badParse(std::move(req)));
+                    return;
+                }
+                std::string move_key = std::string(json_body.at("move").as_string());
+                if (move_key=="L") {
+                    player_->GetDog().SetDirection(model::Direction::WEST);
+                    player_->GetDog().SetSpeed(model::Speed(-(player_->GetSession().GetMap().GetSpeed().vx),0));
+                } else if (move_key=="R") {
+                    player_->GetDog().SetDirection(model::Direction::EAST);
+                    player_->GetDog().SetSpeed(model::Speed(player_->GetSession().GetMap().GetSpeed().vx, 0));
+                } else if (move_key=="U") {
+                    player_->GetDog().SetDirection(model::Direction::NORTH);
+                    player_->GetDog().SetSpeed(model::Speed(0,-(player_->GetSession().GetMap().GetSpeed().vy)));
+                } else if (move_key=="D") {
+                    player_->GetDog().SetDirection(model::Direction::SOUTH);
+                    player_->GetDog().SetSpeed(model::Speed(0,player_->GetSession().GetMap().GetSpeed().vy));
+                } else if (move_key.empty()){
+                    player_->GetDog().SetSpeed(model::Speed(0,0));
+                }
+                json::object response;
+                sendResponseToAuth(std::move(req), std::move(send), response); 
+            }
+    }
+    template <typename Body, typename Allocator, typename Send>
+    void handleMovesTick(http::request<Body, http::basic_fields<Allocator>>&& req, Send&& send) {
+        json::error_code ec;
+        auto json_body = json::parse(req.body(),ec);
+        if (ec) {
+            send(badParse(std::move(req)));
+            return;
+        }
+        if (!json_body.as_object().contains("timeDelta") || !json_body.at("timeDelta").is_number()) {
+            send(badTickParse(std::move(req)));
+            return;
+        }
+        auto time_delta = (json_body.at("timeDelta").as_int64()) * 0.001;
+        for (auto& session : game_.GetGameSessions()) {
+            for (auto& dog : session.GetDogs()) {
+                auto cur_road = dog.GetCurrentRoad(session.GetMap().GetRoads(),dog.GetCoordinate());
+                if (dog.GetDirectionENUM() == model::Direction::NORTH || dog.GetDirectionENUM() == model::Direction::SOUTH) {
+                    model::Coordinate new_coord = {dog.GetCoordinate().x, dog.GetCoordinate().y + time_delta * dog.GetSpeed().vy};
+                    if (cur_road->IsHorizontal()){
+                        auto new_vertical_road_up =dog.GetCurrentRoad(session.GetMap().GetRoads(), {static_cast<double>(dog.GetCoordinate().x), static_cast<double>(cur_road->GetStart().y+1)});
+                        auto new_vertical_road_down =dog.GetCurrentRoad(session.GetMap().GetRoads(), { static_cast<double>(dog.GetCoordinate().x), static_cast<double>(cur_road->GetStart().y-1)});
+                        if (!(new_coord.y <= cur_road->GetStart().y + 0.4)){
+                            if (new_vertical_road_up == nullptr){
+                                dog.SetCoordinateY(cur_road->GetStart().y + 0.4);
+                                dog.SetSpeed({0,0});
+                            }
+
+                            while (!(new_vertical_road_up == nullptr)) {
+                                double max_coord =std::max(new_vertical_road_up->GetStart().y,new_vertical_road_up->GetEnd().y);
+                                if(new_coord.y >= max_coord+0.4){
+                                    dog.SetCoordinateY(max_coord+0.4);
+                                    dog.SetSpeed({0,0});
+                                    auto new_vertical_road_up =dog.GetCurrentRoad(session.GetMap().GetRoads(), {dog.GetCoordinate().x, max_coord+1});
+                                } else {
+                                    //dog.SetSpeed(dog_speed_for_new_coord);
+                                    dog.SetCoordinateY(new_coord.y);
+                                    break;
+                                }
+                            } 
+                            /* ТАК БЫЛО После того как сделался while и у нас была дорога  на которую перешли, то мы меняем координату, 
+                            но когда мы рассчитываем новую дорогу у нас цикл заканчивается и начинается проверка, которая срабатывает*/
+                            
+                        } else if (!(new_coord.y >= cur_road->GetStart().y - 0.4)) {
+                            if (new_vertical_road_down == nullptr){
+                                dog.SetCoordinateY(cur_road->GetStart().y - 0.4);
+                                dog.SetSpeed({0,0});
+                            }
+
+                            while (!(new_vertical_road_down == nullptr)) {
+                                double min_coord =std::min(new_vertical_road_down->GetStart().y,new_vertical_road_down->GetEnd().y);
+                                if (new_coord.y <= min_coord - 0.4) {
+                                    dog.SetCoordinateY(min_coord-0.4);
+                                    dog.SetSpeed({0,0});
+                                    auto new_vertical_road_down =dog.GetCurrentRoad(session.GetMap().GetRoads(), {dog.GetCoordinate().x, min_coord-1});
+                                } else {
+                                    //dog.SetSpeed(dog_speed_for_new_coord);
+                                    dog.SetCoordinateY(new_coord.y);
+                                    break;
+                                }
+                            }
+                            
+                        } else {
+                            //dog.SetSpeed(model::Speed(session.GetMap().GetSpeed().vx, session.GetMap().GetSpeed().vy));
+                            dog.SetCoordinateY(new_coord.y);
+                        }
+                    } else if (cur_road->IsVertical()){
+                        double max_coord_cur_y =std::max(cur_road->GetStart().y,cur_road->GetEnd().y); 
+                        double min_coord_cur_y =std::min(cur_road->GetStart().y,cur_road->GetEnd().y); 
+                        auto new_vertical_road_up =dog.GetCurrentRoad(session.GetMap().GetRoads(), {dog.GetCoordinate().x, max_coord_cur_y+1});
+                        auto new_vertical_road_down =dog.GetCurrentRoad(session.GetMap().GetRoads(), {dog.GetCoordinate().x, min_coord_cur_y-1});
+                        if(!(new_coord.y <= max_coord_cur_y+0.4)){
+                            if (new_vertical_road_up == nullptr){
+                                dog.SetCoordinateY(max_coord_cur_y + 0.4);
+                                dog.SetSpeed({0,0});
+                            }
+
+                            while (!(new_vertical_road_up == nullptr)) {
+                                double max_coord_new_y =std::max(new_vertical_road_up->GetStart().y,new_vertical_road_up->GetEnd().y);
+                                if (new_coord.y >= max_coord_new_y+0.4) {
+                                    dog.SetCoordinateY(max_coord_new_y+0.4);
+                                    dog.SetSpeed({0,0});
+                                    auto new_vertical_road_up =dog.GetCurrentRoad(session.GetMap().GetRoads(), {dog.GetCoordinate().x, max_coord_new_y+1});
+                                } else {
+                                    //dog.SetSpeed(dog_speed_for_new_coord);
+                                    dog.SetCoordinateY(new_coord.y);
+                                    break;
+                                }
+                            } 
+                            
+                        } else if(!(new_coord.y >= min_coord_cur_y-0.4)){
+                            if (new_vertical_road_down == nullptr) {
+                                dog.SetCoordinateY(min_coord_cur_y - 0.4);
+                                dog.SetSpeed({0,0});
+                            }
+
+                            while (!(new_vertical_road_down == nullptr)) {
+                                double min_coord_new_y =std::min(new_vertical_road_down->GetStart().y,new_vertical_road_down->GetEnd().y);
+                                if (new_coord.y <= min_coord_new_y - 0.4) {
+                                    dog.SetCoordinateY(min_coord_new_y-0.4);
+                                    dog.SetSpeed({0,0});
+                                    auto new_vertical_road_down =dog.GetCurrentRoad(session.GetMap().GetRoads(), {dog.GetCoordinate().x, min_coord_new_y-1});
+                                } else {
+                                    //dog.SetSpeed(dog_speed_for_new_coord);
+                                    dog.SetCoordinateY(new_coord.y);
+                                    break;
+                                }
+                            } 
+                            
+                        } else{
+                            //dog.SetSpeed(dog_speed_for_new_coord);
+                            dog.SetCoordinateY(new_coord.y);
+                        }
+                    }
+                } else if (dog.GetDirectionENUM() == model::Direction::EAST || dog.GetDirectionENUM() == model::Direction::WEST) {
+                    //Поменять ОБРАЩЕНИЕ К СКОРОСТИ
+                    model::Coordinate new_coord = {dog.GetCoordinate().x + time_delta * dog.GetSpeed().vx, dog.GetCoordinate().y};
+                    if (cur_road->IsVertical()) { 
+                        auto new_horizontal_road_right =dog.GetCurrentRoad(session.GetMap().GetRoads(), { static_cast<double>(cur_road->GetStart().x+1), static_cast<double>(dog.GetCoordinate().y)});
+                        auto new_horizontal_road_left =dog.GetCurrentRoad(session.GetMap().GetRoads(), { static_cast<double>(cur_road->GetStart().x-1), static_cast<double>(dog.GetCoordinate().y) });
+                        if (!(new_coord.x <= cur_road->GetStart().x + 0.4)){
+                            if (new_horizontal_road_right == nullptr)  {
+                                dog.SetCoordinateX(cur_road->GetStart().x + 0.4);
+                                dog.SetSpeed({0,0});
+                            }
+
+                            while (!(new_horizontal_road_right == nullptr)) {
+                                double max_coord_right_x =std::max(new_horizontal_road_right->GetStart().x,new_horizontal_road_right->GetEnd().x);
+                                if(new_coord.x >= max_coord_right_x+0.4){
+                                    dog.SetCoordinateX(max_coord_right_x+0.4);
+                                    dog.SetSpeed({0,0});
+                                    auto new_horizontal_road_right =dog.GetCurrentRoad(session.GetMap().GetRoads(), {max_coord_right_x+1, dog.GetCoordinate().y});
+                                } else {
+                                    //dog.SetSpeed(dog_speed_for_new_coord);
+                                    dog.SetCoordinateX(new_coord.x);
+                                    break;
+                                }
+                            } 
+                            
+                        } else if (!(new_coord.x >= cur_road->GetStart().x - 0.4)) {
+                            if (new_horizontal_road_left == nullptr) {
+                                dog.SetCoordinateX(cur_road->GetStart().x - 0.4);
+                                dog.SetSpeed({0,0});
+                            }
+
+                            while (!(new_horizontal_road_left == nullptr)) {
+                                double min_coord_left_x =std::min(new_horizontal_road_left->GetStart().x,new_horizontal_road_left->GetEnd().x);
+                                if (new_coord.x <= min_coord_left_x - 0.4) {
+                                    dog.SetCoordinateX(min_coord_left_x-0.4);
+                                    dog.SetSpeed({0,0});
+                                    auto new_horizontal_road_left =dog.GetCurrentRoad(session.GetMap().GetRoads(), {min_coord_left_x-1, dog.GetCoordinate().y });
+                                } else {
+                                    //dog.SetSpeed(dog_speed_for_new_coord);
+                                    dog.SetCoordinateX(new_coord.x);
+                                    break;
+                                }
+                            }
+                            
+                        } else {
+                            //dog.SetSpeed(dog_speed_for_new_coord);
+                            dog.SetCoordinateX(new_coord.x);
+                        }
+                    } else if (cur_road->IsHorizontal()){
+                        double max_coord_cur_x =std::max(cur_road->GetStart().x,cur_road->GetEnd().x); 
+                        double min_coord_cur_x =std::min(cur_road->GetStart().x,cur_road->GetEnd().x); 
+                        auto new_horizontal_road_right =dog.GetCurrentRoad(session.GetMap().GetRoads(), {max_coord_cur_x+1, dog.GetCoordinate().y});
+                        auto new_horizontal_road_left =dog.GetCurrentRoad(session.GetMap().GetRoads(), {min_coord_cur_x-1, dog.GetCoordinate().y});
+                        if(!(new_coord.x <= max_coord_cur_x+0.4)){
+                            if (new_horizontal_road_right == nullptr) {
+                                dog.SetCoordinateX(max_coord_cur_x + 0.4);
+                                dog.SetSpeed({0,0});
+                            }
+                            if (!(new_horizontal_road_right == nullptr)) {
+                                double max_coord_new_x =std::max(new_horizontal_road_right->GetStart().x,new_horizontal_road_right->GetEnd().x);
+                                if (new_coord.x >= max_coord_new_x+0.4) {
+                                    dog.SetCoordinateX(max_coord_new_x+0.4);
+                                    dog.SetSpeed({0,0});
+                                    auto new_horizontal_road_right =dog.GetCurrentRoad(session.GetMap().GetRoads(), {max_coord_new_x+1, dog.GetCoordinate().y});
+                                } else {
+                                    //dog.SetSpeed(dog_speed_for_new_coord);
+                                    dog.SetCoordinateX(new_coord.x);
+                                    break;
+                                }
+                            } 
+                            
+                        } else if(!(new_coord.x >= min_coord_cur_x-0.4)){
+                            if (new_horizontal_road_left == nullptr) {
+                                dog.SetCoordinateX(min_coord_cur_x - 0.4);
+                                dog.SetSpeed({0,0});
+                            }
+                            
+                            while (!(new_horizontal_road_left == nullptr)) {
+                                double min_coord_new_x =std::min(new_horizontal_road_left->GetStart().x,new_horizontal_road_left->GetEnd().x);
+                                if (new_coord.x <= min_coord_new_x - 0.4) {
+                                    dog.SetCoordinateX(min_coord_new_x-0.4);
+                                    dog.SetSpeed({0,0});
+                                    auto new_horizontal_road_left =dog.GetCurrentRoad(session.GetMap().GetRoads(), {min_coord_new_x-1, dog.GetCoordinate().y});
+                                } else {
+                                    //dog.SetSpeed(dog_speed_for_new_coord);
+                                    dog.SetCoordinateX(new_coord.x);
+                                    break;
+                                }
+                            } 
+                            
+                        } else{
+                            //dog.SetSpeed(dog_speed_for_new_coord);
+                            dog.SetCoordinateX(new_coord.x);
+                        }
+                    }
+                }
+            }
+        }
+        json::object response;
+        sendResponseToAuth(std::move(req), std::move(send), response);
     }
     template <typename Body, typename Allocator, typename Send>
     void handleGetMapById(http::request<Body, http::basic_fields<Allocator>>&& req, Send&& send) {
@@ -424,12 +748,21 @@ private:
     }
 
     template <typename Body, typename Allocator>
+    http::response<http::string_body> badTickParse(http::request<Body, http::basic_fields<Allocator>>&& req) {
+        json::object error_response{
+            {"code", "invalidArgument"},
+            {"message", "Failed to parse tick request JSON"}};
+
+        return createErrorResponse(std::move(req), http::status::bad_request, error_response);
+    }
+
+    template <typename Body, typename Allocator>
     http::response<http::string_body> mapNotFound(http::request<Body, http::basic_fields<Allocator>>&& req) {
         json::object error_response{
             {"code", "mapNotFound"},
             {"message", "Map not found"}};
 
-        return createErrorResponse(std::move(req), http::status::not_found, error_response);
+        return createErrorResponseToAuth(std::move(req), http::status::not_found, error_response);
     }
 
     template <typename Body, typename Allocator>
@@ -561,7 +894,6 @@ private:
     http::response<http::string_body> createErrorResponseToAuth(http::request<Body, http::basic_fields<Allocator>>&& req, http::status status, Json&& json_response) {
         http::response<http::string_body> res{status, req.version()};
         res.set(http::field::content_type, "application/json");
-        //res.set(http::field::content_length, std::to_string(res.body().size()));
         res.set(http::field::cache_control, "no-cache");
         res.keep_alive(req.keep_alive());  
         res.body() = json::serialize(json_response);
@@ -573,7 +905,6 @@ private:
     http::response<http::string_body> createErrorResponseToAuthToAllow(http::request<Body, http::basic_fields<Allocator>>&& req, http::status status, std::string allowed_type, Json&& json_response) {
         http::response<http::string_body> res{status, req.version()};
         res.set(http::field::content_type, "application/json");
-        //res.set(http::field::content_length, std::to_string(res.body().size()));
         res.set(http::field::cache_control, "no-cache");
         res.set(http::field::allow, allowed_type);
         res.body() = json::serialize(json_response);    
@@ -583,6 +914,7 @@ private:
 
     model::Game& game_;
     std::string path_;
+    boost::asio::strand<boost::asio::io_context::executor_type>& strand_;
 };
     
 }  // namespace http_handler

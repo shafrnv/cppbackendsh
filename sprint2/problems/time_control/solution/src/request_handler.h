@@ -105,7 +105,7 @@ public:
         }
         auto const size = file.size();
         http::response<http::file_body> res{http::status::ok, req.version()};
-        res.set(http::field::content_type, get_mime_type(requested_path.extension()));
+        res.set(http::field::content_type, get_mime_type(requested_path.extension().string()));
         res.content_length(size);
         res.body() = std::move(file);
         res.keep_alive(req.keep_alive());
@@ -146,7 +146,11 @@ public:
                         send(badMethodNotPost(std::move(req)));
                     }
                 } else if (req.target() == "/api/v1/game/tick") {
+                    if (req.method() == http::verb::post) {
                     handleMovesTick(std::move(req), std::move(send));
+                    } else {
+                        send(badMethodNotPost(std::move(req)));
+                    }
                 }else if (req.target().starts_with("/api/")) {
                     send(badRequest(std::move(req)));
                 } else {    
@@ -246,7 +250,7 @@ private:
                 {"name", map.GetName()}
                 });
         }
-        sendResponse(std::move(req), std::move(send), maps_list_);
+        sendResponseToAuth(std::move(req), std::move(send), maps_list_);
     }
 
     json::value toJson(const model::Road& road) {
@@ -347,13 +351,10 @@ private:
         }
         
         if (auto session_yet = game_.FindGameSessionByMap(*map); session_yet) {
-            std::cout<<"yet: " << *(session_yet->GetId())<<std::endl;
-            auto player_ = model::Players::AddPlayer(name,session_yet);
-            std::cout<<"yet dog id: " << *(player_.GetDog().GetId())<<std::endl;
-            std::cout<< "Token"<< *(player_.GetToken())<<std::endl;
+            auto& player_ = model::Players::AddPlayer(name,session_yet);
             json::object player_json{
                 {"authToken",  *(player_.GetToken())},
-                {"playerId", *(player_.GetDog().GetId())}
+                {"playerId", *(player_.GetDog()->GetId())}
             };
             sendResponseToAuth(std::move(req), std::move(send), player_json);
             
@@ -362,11 +363,10 @@ private:
             std::cout<<"of no"<< std::endl;
             auto& new_session = game_.AddGameSession(*map);
             std::cout<<"new: " << *(new_session.GetId())<<std::endl;
-            auto player_ = model::Players::AddPlayer(name, &new_session);
-            
+            auto& player_ = model::Players::AddPlayer(name, &new_session);
             json::object player_json{
                 {"authToken",  *(player_.GetToken())},
-                {"playerId", *(player_.GetDog().GetId())}
+                {"playerId", *(player_.GetDog()->GetId())}
             };
             sendResponseToAuth(std::move(req), std::move(send), player_json);
         }
@@ -398,9 +398,9 @@ private:
             json::object players;
             int index = 0;
             for(auto& dog :player_->GetSession().GetDogs()){
-                cout << index << dog.GetName() << endl;
+                cout << index << dog.get()->GetName() << endl;
                 players[std::to_string(index++)] =json::object{
-                    {"name", dog.GetName()}
+                    {"name", dog.get()->GetName()}
                     };
             }
             sendResponseToAuth(std::move(req), std::move(send), players);
@@ -432,10 +432,10 @@ private:
             } else {
             json::object players;
             for(auto& dog :player_->GetSession().GetDogs()){
-                players[std::to_string(*(dog.GetId()))] = json::object{
-                    {"pos", json::array{dog.GetCoordinate().x, dog.GetCoordinate().y}},
-                    {"speed",json::array{ dog.GetSpeed().vx, dog.GetSpeed().vy}},
-                    {"dir", dog.GetDirection()}
+                players[std::to_string(*(dog.get()->GetId()))] = json::object{
+                    {"pos", json::array{dog.get()->GetCoordinate().x, dog.get()->GetCoordinate().y}},
+                    {"speed",json::array{ dog.get()->GetSpeed().vx, dog.get()->GetSpeed().vy}},
+                    {"dir", dog.get()->GetDirection()}
                     };
             }
             json::object response;
@@ -475,20 +475,25 @@ private:
                     return;
                 }
                 std::string move_key = std::string(json_body.at("move").as_string());
+                std::cout<<"dog id1: " << *(player_->GetDog().get()->GetId()) << std::endl;
                 if (move_key=="L") {
-                    player_->GetDog().SetDirection(model::Direction::WEST);
-                    player_->GetDog().SetSpeed(model::Speed(-(player_->GetSession().GetMap().GetSpeed().vx),0));
+                    player_->GetDog().get()->SetDirection(model::Direction::WEST);
+                    player_->GetDog().get()->SetSpeed(model::Speed(-(player_->GetSession().GetMap().GetSpeed().vx),0));
                 } else if (move_key=="R") {
-                    player_->GetDog().SetDirection(model::Direction::EAST);
-                    player_->GetDog().SetSpeed(model::Speed(player_->GetSession().GetMap().GetSpeed().vx, 0));
+                    player_->GetDog().get()->SetDirection(model::Direction::EAST);
+                    player_->GetDog().get()->SetSpeed(model::Speed(player_->GetSession().GetMap().GetSpeed().vx, 0));
                 } else if (move_key=="U") {
-                    player_->GetDog().SetDirection(model::Direction::NORTH);
-                    player_->GetDog().SetSpeed(model::Speed(0,-(player_->GetSession().GetMap().GetSpeed().vy)));
+                    player_->GetDog().get()->SetDirection(model::Direction::NORTH);
+                    player_->GetDog().get()->SetSpeed(model::Speed(0,-(player_->GetSession().GetMap().GetSpeed().vy)));
                 } else if (move_key=="D") {
-                    player_->GetDog().SetDirection(model::Direction::SOUTH);
-                    player_->GetDog().SetSpeed(model::Speed(0,player_->GetSession().GetMap().GetSpeed().vy));
+                    std::cout<<"dog dir1: " << player_->GetDog().get()->GetDirection() << std::endl;
+                    std::cout<<"dog speed1" << player_->GetDog().get()->GetSpeed().vx <<" " << player_->GetDog().get()->GetSpeed().vy << std::endl;
+                    player_->GetDog().get()->SetDirection(model::Direction::SOUTH);
+                    player_->GetDog().get()->SetSpeed(model::Speed(0,player_->GetSession().GetMap().GetSpeed().vy));
+                    std::cout<<"dog dir2: " << player_->GetDog().get()->GetDirection() << std::endl;
+                    std::cout<<"dog speed2" << player_->GetDog().get()->GetSpeed().vx <<" " << player_->GetDog().get()->GetSpeed().vy << std::endl;
                 } else if (move_key.empty()){
-                    player_->GetDog().SetSpeed(model::Speed(0,0));
+                    player_->GetDog().get()->SetSpeed(model::Speed(0,0));
                 }
                 json::object response;
                 sendResponseToAuth(std::move(req), std::move(send), response); 
@@ -502,34 +507,35 @@ private:
             send(badParse(std::move(req)));
             return;
         }
-        if (!json_body.as_object().contains("timeDelta") || !json_body.at("timeDelta").is_number()) {
+        if (!json_body.as_object().contains("timeDelta") || !json_body.at("timeDelta").is_int64()) {
             send(badTickParse(std::move(req)));
-            return;
+            return; 
         }
         auto time_delta = (json_body.at("timeDelta").as_int64()) * 0.001;
         for (auto& session : game_.GetGameSessions()) {
-            for (auto& dog : session.GetDogs()) {
-                auto cur_road = dog.GetCurrentRoad(session.GetMap().GetRoads(),dog.GetCoordinate());
-                if (dog.GetDirectionENUM() == model::Direction::NORTH || dog.GetDirectionENUM() == model::Direction::SOUTH) {
-                    model::Coordinate new_coord = {dog.GetCoordinate().x, dog.GetCoordinate().y + time_delta * dog.GetSpeed().vy};
+            for (auto& dog_ : session.GetDogs()) {
+                auto dog = dog_.get();
+                auto cur_road = dog->GetCurrentRoad(session.GetMap().GetRoads(),dog->GetCoordinate());
+                if (dog->GetDirectionENUM() == model::Direction::NORTH || dog->GetDirectionENUM() == model::Direction::SOUTH) {
+                    model::Coordinate new_coord = {dog->GetCoordinate().x, dog->GetCoordinate().y + time_delta * dog->GetSpeed().vy};
                     if (cur_road->IsHorizontal()){
-                        auto new_vertical_road_up =dog.GetCurrentRoad(session.GetMap().GetRoads(), {dog.GetCoordinate().x, cur_road->GetStart().y+1});
-                        auto new_vertical_road_down =dog.GetCurrentRoad(session.GetMap().GetRoads(), {dog.GetCoordinate().x, cur_road->GetStart().y-1});
+                        auto new_vertical_road_up =dog->GetCurrentRoad(session.GetMap().GetRoads(), {static_cast<double>(dog->GetCoordinate().x), static_cast<double>(cur_road->GetStart().y+1)});
+                        auto new_vertical_road_down =dog->GetCurrentRoad(session.GetMap().GetRoads(), { static_cast<double>(dog->GetCoordinate().x), static_cast<double>(cur_road->GetStart().y-1)});
                         if (!(new_coord.y <= cur_road->GetStart().y + 0.4)){
                             if (new_vertical_road_up == nullptr){
-                                dog.SetCoordinateY(cur_road->GetStart().y + 0.4);
-                                dog.SetSpeed({0,0});
+                                dog->SetCoordinateY(cur_road->GetStart().y + 0.4);
+                                dog->SetSpeed({0,0});
                             }
 
                             while (!(new_vertical_road_up == nullptr)) {
                                 double max_coord =std::max(new_vertical_road_up->GetStart().y,new_vertical_road_up->GetEnd().y);
                                 if(new_coord.y >= max_coord+0.4){
-                                    dog.SetCoordinateY(max_coord+0.4);
-                                    dog.SetSpeed({0,0});
-                                    auto new_vertical_road_up =dog.GetCurrentRoad(session.GetMap().GetRoads(), {dog.GetCoordinate().x, max_coord+1});
+                                    dog->SetCoordinateY(max_coord+0.4);
+                                    dog->SetSpeed({0,0});
+                                    auto new_vertical_road_up =dog->GetCurrentRoad(session.GetMap().GetRoads(), {dog->GetCoordinate().x, max_coord+1});
                                 } else {
                                     //dog.SetSpeed(dog_speed_for_new_coord);
-                                    dog.SetCoordinateY(new_coord.y);
+                                    dog->SetCoordinateY(new_coord.y);
                                     break;
                                 }
                             } 
@@ -538,175 +544,175 @@ private:
                             
                         } else if (!(new_coord.y >= cur_road->GetStart().y - 0.4)) {
                             if (new_vertical_road_down == nullptr){
-                                dog.SetCoordinateY(cur_road->GetStart().y - 0.4);
-                                dog.SetSpeed({0,0});
+                                dog->SetCoordinateY(cur_road->GetStart().y - 0.4);
+                                dog->SetSpeed({0,0});
                             }
 
                             while (!(new_vertical_road_down == nullptr)) {
                                 double min_coord =std::min(new_vertical_road_down->GetStart().y,new_vertical_road_down->GetEnd().y);
                                 if (new_coord.y <= min_coord - 0.4) {
-                                    dog.SetCoordinateY(min_coord-0.4);
-                                    dog.SetSpeed({0,0});
-                                    auto new_vertical_road_down =dog.GetCurrentRoad(session.GetMap().GetRoads(), {dog.GetCoordinate().x, min_coord-1});
+                                    dog->SetCoordinateY(min_coord-0.4);
+                                    dog->SetSpeed({0,0});
+                                    auto new_vertical_road_down =dog->GetCurrentRoad(session.GetMap().GetRoads(), {dog->GetCoordinate().x, min_coord-1});
                                 } else {
                                     //dog.SetSpeed(dog_speed_for_new_coord);
-                                    dog.SetCoordinateY(new_coord.y);
+                                    dog->SetCoordinateY(new_coord.y);
                                     break;
                                 }
                             }
                             
                         } else {
                             //dog.SetSpeed(model::Speed(session.GetMap().GetSpeed().vx, session.GetMap().GetSpeed().vy));
-                            dog.SetCoordinateY(new_coord.y);
+                            dog->SetCoordinateY(new_coord.y);
                         }
                     } else if (cur_road->IsVertical()){
                         double max_coord_cur_y =std::max(cur_road->GetStart().y,cur_road->GetEnd().y); 
                         double min_coord_cur_y =std::min(cur_road->GetStart().y,cur_road->GetEnd().y); 
-                        auto new_vertical_road_up =dog.GetCurrentRoad(session.GetMap().GetRoads(), {dog.GetCoordinate().x, max_coord_cur_y+1});
-                        auto new_vertical_road_down =dog.GetCurrentRoad(session.GetMap().GetRoads(), {dog.GetCoordinate().x, min_coord_cur_y-1});
+                        auto new_vertical_road_up =dog->GetCurrentRoad(session.GetMap().GetRoads(), {dog->GetCoordinate().x, max_coord_cur_y+1});
+                        auto new_vertical_road_down =dog->GetCurrentRoad(session.GetMap().GetRoads(), {dog->GetCoordinate().x, min_coord_cur_y-1});
                         if(!(new_coord.y <= max_coord_cur_y+0.4)){
                             if (new_vertical_road_up == nullptr){
-                                dog.SetCoordinateY(max_coord_cur_y + 0.4);
-                                dog.SetSpeed({0,0});
+                                dog->SetCoordinateY(max_coord_cur_y + 0.4);
+                                dog->SetSpeed({0,0});
                             }
 
                             while (!(new_vertical_road_up == nullptr)) {
                                 double max_coord_new_y =std::max(new_vertical_road_up->GetStart().y,new_vertical_road_up->GetEnd().y);
                                 if (new_coord.y >= max_coord_new_y+0.4) {
-                                    dog.SetCoordinateY(max_coord_new_y+0.4);
-                                    dog.SetSpeed({0,0});
-                                    auto new_vertical_road_up =dog.GetCurrentRoad(session.GetMap().GetRoads(), {dog.GetCoordinate().x, max_coord_new_y+1});
+                                    dog->SetCoordinateY(max_coord_new_y+0.4);
+                                    dog->SetSpeed({0,0});
+                                    auto new_vertical_road_up =dog->GetCurrentRoad(session.GetMap().GetRoads(), {dog->GetCoordinate().x, max_coord_new_y+1});
                                 } else {
                                     //dog.SetSpeed(dog_speed_for_new_coord);
-                                    dog.SetCoordinateY(new_coord.y);
+                                    dog->SetCoordinateY(new_coord.y);
                                     break;
                                 }
                             } 
                             
                         } else if(!(new_coord.y >= min_coord_cur_y-0.4)){
                             if (new_vertical_road_down == nullptr) {
-                                dog.SetCoordinateY(min_coord_cur_y - 0.4);
-                                dog.SetSpeed({0,0});
+                                dog->SetCoordinateY(min_coord_cur_y - 0.4);
+                                dog->SetSpeed({0,0});
                             }
 
                             while (!(new_vertical_road_down == nullptr)) {
                                 double min_coord_new_y =std::min(new_vertical_road_down->GetStart().y,new_vertical_road_down->GetEnd().y);
                                 if (new_coord.y <= min_coord_new_y - 0.4) {
-                                    dog.SetCoordinateY(min_coord_new_y-0.4);
-                                    dog.SetSpeed({0,0});
-                                    auto new_vertical_road_down =dog.GetCurrentRoad(session.GetMap().GetRoads(), {dog.GetCoordinate().x, min_coord_new_y-1});
+                                    dog->SetCoordinateY(min_coord_new_y-0.4);
+                                    dog->SetSpeed({0,0});
+                                    auto new_vertical_road_down =dog->GetCurrentRoad(session.GetMap().GetRoads(), {dog->GetCoordinate().x, min_coord_new_y-1});
                                 } else {
                                     //dog.SetSpeed(dog_speed_for_new_coord);
-                                    dog.SetCoordinateY(new_coord.y);
+                                    dog->SetCoordinateY(new_coord.y);
                                     break;
                                 }
                             } 
                             
                         } else{
                             //dog.SetSpeed(dog_speed_for_new_coord);
-                            dog.SetCoordinateY(new_coord.y);
+                            dog->SetCoordinateY(new_coord.y);
                         }
                     }
-                } else if (dog.GetDirectionENUM() == model::Direction::EAST || dog.GetDirectionENUM() == model::Direction::WEST) {
+                } else if (dog->GetDirectionENUM() == model::Direction::EAST || dog->GetDirectionENUM() == model::Direction::WEST) {
                     //Поменять ОБРАЩЕНИЕ К СКОРОСТИ
-                    model::Coordinate new_coord = {dog.GetCoordinate().x + time_delta * dog.GetSpeed().vx, dog.GetCoordinate().y};
+                    model::Coordinate new_coord = {dog->GetCoordinate().x + time_delta * dog->GetSpeed().vx, dog->GetCoordinate().y};
                     if (cur_road->IsVertical()) { 
-                        auto new_horizontal_road_right =dog.GetCurrentRoad(session.GetMap().GetRoads(), {cur_road->GetStart().x+1, dog.GetCoordinate().y});
-                        auto new_horizontal_road_left =dog.GetCurrentRoad(session.GetMap().GetRoads(), {cur_road->GetStart().x-1, dog.GetCoordinate().y });
+                        auto new_horizontal_road_right =dog->GetCurrentRoad(session.GetMap().GetRoads(), { static_cast<double>(cur_road->GetStart().x+1), static_cast<double>(dog->GetCoordinate().y)});
+                        auto new_horizontal_road_left =dog->GetCurrentRoad(session.GetMap().GetRoads(), { static_cast<double>(cur_road->GetStart().x-1), static_cast<double>(dog->GetCoordinate().y) });
                         if (!(new_coord.x <= cur_road->GetStart().x + 0.4)){
                             if (new_horizontal_road_right == nullptr)  {
-                                dog.SetCoordinateX(cur_road->GetStart().x + 0.4);
-                                dog.SetSpeed({0,0});
+                                dog->SetCoordinateX(cur_road->GetStart().x + 0.4);
+                                dog->SetSpeed({0,0});
                             }
 
                             while (!(new_horizontal_road_right == nullptr)) {
                                 double max_coord_right_x =std::max(new_horizontal_road_right->GetStart().x,new_horizontal_road_right->GetEnd().x);
                                 if(new_coord.x >= max_coord_right_x+0.4){
-                                    dog.SetCoordinateX(max_coord_right_x+0.4);
-                                    dog.SetSpeed({0,0});
-                                    auto new_horizontal_road_right =dog.GetCurrentRoad(session.GetMap().GetRoads(), {max_coord_right_x+1, dog.GetCoordinate().y});
+                                    dog->SetCoordinateX(max_coord_right_x+0.4);
+                                    dog->SetSpeed({0,0});
+                                    auto new_horizontal_road_right =dog->GetCurrentRoad(session.GetMap().GetRoads(), {max_coord_right_x+1, dog->GetCoordinate().y});
                                 } else {
                                     //dog.SetSpeed(dog_speed_for_new_coord);
-                                    dog.SetCoordinateX(new_coord.x);
+                                    dog->SetCoordinateX(new_coord.x);
                                     break;
                                 }
                             } 
                             
                         } else if (!(new_coord.x >= cur_road->GetStart().x - 0.4)) {
                             if (new_horizontal_road_left == nullptr) {
-                                dog.SetCoordinateX(cur_road->GetStart().x - 0.4);
-                                dog.SetSpeed({0,0});
+                                dog->SetCoordinateX(cur_road->GetStart().x - 0.4);
+                                dog->SetSpeed({0,0});
                             }
 
                             while (!(new_horizontal_road_left == nullptr)) {
                                 double min_coord_left_x =std::min(new_horizontal_road_left->GetStart().x,new_horizontal_road_left->GetEnd().x);
                                 if (new_coord.x <= min_coord_left_x - 0.4) {
-                                    dog.SetCoordinateX(min_coord_left_x-0.4);
-                                    dog.SetSpeed({0,0});
-                                    auto new_horizontal_road_left =dog.GetCurrentRoad(session.GetMap().GetRoads(), {min_coord_left_x-1, dog.GetCoordinate().y });
+                                    dog->SetCoordinateX(min_coord_left_x-0.4);
+                                    dog->SetSpeed({0,0});
+                                    auto new_horizontal_road_left =dog->GetCurrentRoad(session.GetMap().GetRoads(), {min_coord_left_x-1, dog->GetCoordinate().y });
                                 } else {
                                     //dog.SetSpeed(dog_speed_for_new_coord);
-                                    dog.SetCoordinateX(new_coord.x);
+                                    dog->SetCoordinateX(new_coord.x);
                                     break;
                                 }
                             }
                             
                         } else {
                             //dog.SetSpeed(dog_speed_for_new_coord);
-                            dog.SetCoordinateX(new_coord.x);
+                            dog->SetCoordinateX(new_coord.x);
                         }
                     } else if (cur_road->IsHorizontal()){
                         double max_coord_cur_x =std::max(cur_road->GetStart().x,cur_road->GetEnd().x); 
                         double min_coord_cur_x =std::min(cur_road->GetStart().x,cur_road->GetEnd().x); 
-                        auto new_horizontal_road_right =dog.GetCurrentRoad(session.GetMap().GetRoads(), {max_coord_cur_x+1, dog.GetCoordinate().y});
-                        auto new_horizontal_road_left =dog.GetCurrentRoad(session.GetMap().GetRoads(), {min_coord_cur_x-1, dog.GetCoordinate().y});
+                        auto new_horizontal_road_right =dog->GetCurrentRoad(session.GetMap().GetRoads(), {max_coord_cur_x+1, dog->GetCoordinate().y});
+                        auto new_horizontal_road_left =dog->GetCurrentRoad(session.GetMap().GetRoads(), {min_coord_cur_x-1, dog->GetCoordinate().y});
                         if(!(new_coord.x <= max_coord_cur_x+0.4)){
                             if (new_horizontal_road_right == nullptr) {
-                                dog.SetCoordinateX(max_coord_cur_x + 0.4);
-                                dog.SetSpeed({0,0});
+                                dog->SetCoordinateX(max_coord_cur_x + 0.4);
+                                dog->SetSpeed({0,0});
                             }
                             if (!(new_horizontal_road_right == nullptr)) {
                                 double max_coord_new_x =std::max(new_horizontal_road_right->GetStart().x,new_horizontal_road_right->GetEnd().x);
                                 if (new_coord.x >= max_coord_new_x+0.4) {
-                                    dog.SetCoordinateX(max_coord_new_x+0.4);
-                                    dog.SetSpeed({0,0});
-                                    auto new_horizontal_road_right =dog.GetCurrentRoad(session.GetMap().GetRoads(), {max_coord_new_x+1, dog.GetCoordinate().y});
+                                    dog->SetCoordinateX(max_coord_new_x+0.4);
+                                    dog->SetSpeed({0,0});
+                                    auto new_horizontal_road_right =dog->GetCurrentRoad(session.GetMap().GetRoads(), {max_coord_new_x+1, dog->GetCoordinate().y});
                                 } else {
                                     //dog.SetSpeed(dog_speed_for_new_coord);
-                                    dog.SetCoordinateX(new_coord.x);
+                                    dog->SetCoordinateX(new_coord.x);
                                     break;
                                 }
                             } 
                             
                         } else if(!(new_coord.x >= min_coord_cur_x-0.4)){
                             if (new_horizontal_road_left == nullptr) {
-                                dog.SetCoordinateX(min_coord_cur_x - 0.4);
-                                dog.SetSpeed({0,0});
+                                dog->SetCoordinateX(min_coord_cur_x - 0.4);
+                                dog->SetSpeed({0,0});
                             }
                             
                             while (!(new_horizontal_road_left == nullptr)) {
                                 double min_coord_new_x =std::min(new_horizontal_road_left->GetStart().x,new_horizontal_road_left->GetEnd().x);
                                 if (new_coord.x <= min_coord_new_x - 0.4) {
-                                    dog.SetCoordinateX(min_coord_new_x-0.4);
-                                    dog.SetSpeed({0,0});
-                                    auto new_horizontal_road_left =dog.GetCurrentRoad(session.GetMap().GetRoads(), {min_coord_new_x-1, dog.GetCoordinate().y});
+                                    dog->SetCoordinateX(min_coord_new_x-0.4);
+                                    dog->SetSpeed({0,0});
+                                    auto new_horizontal_road_left =dog->GetCurrentRoad(session.GetMap().GetRoads(), {min_coord_new_x-1, dog->GetCoordinate().y});
                                 } else {
                                     //dog.SetSpeed(dog_speed_for_new_coord);
-                                    dog.SetCoordinateX(new_coord.x);
+                                    dog->SetCoordinateX(new_coord.x);
                                     break;
                                 }
                             } 
                             
                         } else{
                             //dog.SetSpeed(dog_speed_for_new_coord);
-                            dog.SetCoordinateX(new_coord.x);
+                            dog->SetCoordinateX(new_coord.x);
                         }
                     }
                 }
             }
         }
         json::object response;
-        sendResponseToAuth(std::move(req), std::move(send), response); 
+        sendResponseToAuth(std::move(req), std::move(send), response);
     }
     template <typename Body, typename Allocator, typename Send>
     void handleGetMapById(http::request<Body, http::basic_fields<Allocator>>&& req, Send&& send) {
@@ -725,7 +731,7 @@ private:
             {"buildings", toJson(map->GetBuildings())},
             {"offices", toJson(map->GetOffices())}};
 
-        sendResponse(std::move(req), std::move(send), map_json);
+        sendResponseToAuth(std::move(req), std::move(send), map_json);
     }
 
     template <typename Body, typename Allocator, typename Send, typename Json>
@@ -753,7 +759,7 @@ private:
             {"code", "invalidArgument"},
             {"message", "Failed to parse tick request JSON"}};
 
-        return createErrorResponse(std::move(req), http::status::bad_request, error_response);
+        return createErrorResponseToAuth(std::move(req), http::status::bad_request, error_response);
     }
 
     template <typename Body, typename Allocator>

@@ -6,6 +6,7 @@
 #include <vector>
 #include <random>
 #include <iostream>  // for debugging
+#include <algorithm>
 #include "tagged.h"
 
 namespace detail {
@@ -21,7 +22,31 @@ using Coord = Dimension;
 struct Point {
     Coord x, y;
 };
+// Структура для координат псов
+struct Coordinate {
+    double x; // Координата по оси X
+    double y; // Координата по оси Y
 
+    // Конструктор с параметрами по умолчанию
+    Coordinate(double x_val = 0.0, double y_val = 0.0) noexcept
+        : x(x_val), y(y_val) {}
+};
+// Структура для скорости псов
+struct Speed {
+    double vx; // Скорость по оси X (единиц карты в секунду)
+    double vy; // Скорость по оси Y (единиц карты в секунду)
+
+    // Конструктор с параметрами по умолчанию
+    Speed(double vx_val = 1.0, double vy_val=1.0) noexcept
+        : vx(vx_val), vy(vy_val) {}
+};
+// Перечисление для направления
+enum class Direction {
+    NORTH, // Север
+    SOUTH, // Юг
+    EAST,  // Восток
+    WEST   // Запад
+};
 struct Size {
     Dimension width, height;
 };
@@ -129,8 +154,7 @@ public:
 
     Map(Id id, std::string name) noexcept
         : id_(std::move(id))
-        , name_(std::move(name)) {
-    }
+        , name_(std::move(name)) {}
 
     const Id& GetId() const noexcept {
         return id_;
@@ -152,6 +176,10 @@ public:
         return offices_;
     }
 
+    const Speed& GetSpeed() const noexcept {
+        return default_map_dog_speed;
+    }
+
     void AddRoad(const Road& road) {
         roads_.emplace_back(road);
     }
@@ -162,6 +190,10 @@ public:
 
     void AddOffice(Office office);
 
+    void SetSpeed(const Speed& speed) noexcept {
+        default_map_dog_speed = speed;
+    }
+    
 private:
     using OfficeIdToIndex = std::unordered_map<Office::Id, size_t, util::TaggedHasher<Office::Id>>;
 
@@ -172,6 +204,8 @@ private:
 
     OfficeIdToIndex warehouse_id_to_index_;
     Offices offices_;
+
+    Speed default_map_dog_speed;
 };
 
 class PlayerTokens {
@@ -202,17 +236,80 @@ public:
 class Dog{
 public:
     using Id = util::Tagged<int, Dog>;
-    Dog(Id id, std::string name) noexcept
-        : id_(std::move(id)), name_(std::move(name)) {}
+    Dog(Id id, std::string name, Coordinate coordinate, Speed speed, Direction direction) noexcept
+        : id_(std::move(id)),
+          name_(std::move(name)),
+          coordinate_(std::move(coordinate)),
+          speed_(std::move(speed)),
+          direction_(direction) {}
     const Id& GetId() const noexcept {
         return id_;
     }const std::string& GetName() const noexcept {
         return name_;
     }
-    
+    void SetCoordinateX(double coord) noexcept {
+        coordinate_.x = coord;
+    }
+    void SetCoordinateY(double coord) noexcept {
+        coordinate_.y = coord;
+    }
+    void SetSpeed(const Speed& speed) noexcept {
+        speed_ = speed;
+    }
+    void SetDirection(Direction direction) noexcept {
+        direction_ = direction;
+    }
+    const Coordinate& GetCoordinate() const noexcept {
+        return coordinate_;
+    }
+
+    const Speed& GetSpeed() const noexcept {
+        return speed_;
+    }
+
+    std::string GetDirection() const noexcept {
+        if (direction_ == Direction::EAST) {
+            return "R";
+        } else if (direction_ == Direction::WEST) {
+             return "L";
+        } else if (direction_ == Direction::NORTH) {
+            return "U";
+        } else if (direction_ == Direction::SOUTH) {
+            return "D";
+        }
+    }
+    const Direction& GetDirectionENUM() const noexcept {
+        return direction_;
+    }
+
+    const Road* GetCurrentRoad(const std::vector<Road>& roads, const Coordinate& coordinate) const {
+        for (const auto& road : roads) {
+            if (road.IsHorizontal()){
+                double max_coord_cur_x =std::max(road.GetStart().x,road.GetEnd().x); 
+                double min_coord_cur_x =std::min(road.GetStart().x,road.GetEnd().x); 
+                if ((coordinate.y <= road.GetStart().y + 0.4 && coordinate.y >= road.GetStart().y - 0.4) &&
+                    coordinate.x >= min_coord_cur_x - 0.4 && coordinate.x <= max_coord_cur_x + 0.4) {
+                    return &road;
+                }
+            }
+            if (road.IsVertical()){
+                double max_coord_cur_y =std::max(road.GetStart().y,road.GetEnd().y); 
+                double min_coord_cur_y =std::min(road.GetStart().y,road.GetEnd().y); 
+                if ((coordinate.x <= road.GetStart().x + 0.4 && coordinate.x >= road.GetStart().x - 0.4) &&
+                    coordinate.y >= min_coord_cur_y - 0.4 && coordinate.y <= max_coord_cur_y +0.4) {
+                    return &road;
+                }
+            }
+             // Собака не на дороге
+        }
+        return nullptr;
+    }
 private:
     Id id_;
     std::string name_;
+    Coordinate coordinate_; // Координаты пса на карте
+    Speed speed_;           // Скорость пса на карте
+    Direction direction_;   // Направление пса
 };
 
 class GameSession {
@@ -227,10 +324,11 @@ public:
     const Map& GetMap() const noexcept {
         return current_map_;
     }
-    const Dogs& GetDogs() const noexcept {
+    Dogs& GetDogs() noexcept {
         return dogs_;
     }
-    Dog& AddDog(std::string name);
+    
+    Dog& AddDog(std::string name,const Road& road, const Speed& dog_speed_initial);
 private:
     Id id_;
     using DogIdHasher = util::TaggedHasher<Dog::Id>;
@@ -246,15 +344,16 @@ public:
     Player(GameSession& session, Dog& dog, Token token)
         : session_(session), dog_(dog), token_(std::move(token)) {}
 
-    const GameSession& GetSession() const noexcept {
+    GameSession& GetSession() noexcept {
         return session_;
     }
-    const Dog& GetDog() const noexcept {
+    Dog& GetDog()noexcept {
         return dog_;
     }
     const Token& GetToken() const noexcept {
         return token_;
     }
+    
 private:
     GameSession& session_;
     Dog& dog_;
@@ -273,11 +372,14 @@ private:
 class Game {
 public:
     using Maps = std::vector<Map>;
-
+    using GameSessions = std::vector<GameSession>;
     void AddMap(Map map);
     GameSession& AddGameSession(const Map& map_);
     const Maps& GetMaps() const noexcept {
         return maps_;
+    }
+    GameSessions& GetGameSessions() noexcept {
+        return sessions_;
     }
 
     const Map* FindMap(const Map::Id& id) const noexcept {
@@ -305,6 +407,7 @@ private:
     using GameSessionIdToIndex = std::unordered_map<GameSession::Id, size_t, GameSessionIdHasher>;
     std::vector<GameSession> sessions_;
     GameSessionIdToIndex session_id_to_index_;
+    int time_delta;
 };
 
 }  // namespace model

@@ -236,7 +236,7 @@ public:
 class Dog{
 public:
     using Id = util::Tagged<int, Dog>;
-    Dog(Id id, std::string name, Coordinate coordinate, Speed speed, Direction direction) noexcept
+    explicit Dog(Id id, std::string name, Coordinate coordinate, Speed speed, Direction direction) noexcept
         : id_(std::move(id)),
           name_(std::move(name)),
           coordinate_(std::move(coordinate)),
@@ -271,12 +271,13 @@ public:
         if (direction_ == Direction::EAST) {
             return "R";
         } else if (direction_ == Direction::WEST) {
-             return "L";
+            return "L";
         } else if (direction_ == Direction::NORTH) {
             return "U";
         } else if (direction_ == Direction::SOUTH) {
             return "D";
         }
+        return "";
     }
     const Direction& GetDirectionENUM() const noexcept {
         return direction_;
@@ -314,7 +315,8 @@ private:
 
 class GameSession {
 public:
-    using Dogs = std::vector<Dog>;
+    using DogPointer = std::shared_ptr<Dog>;
+    using Dogs = std::vector<DogPointer>;
     using Id = util::Tagged<std::string, GameSession>;
     GameSession(Id id, Map map)
         : id_(std::move(id)), current_map_(map) {}
@@ -328,12 +330,12 @@ public:
         return dogs_;
     }
     
-    Dog& AddDog(std::string name,const Road& road, const Speed& dog_speed_initial);
+    DogPointer AddDog(std::string name,const Road& road, const Speed& dog_speed_initial);
 private:
     Id id_;
     using DogIdHasher = util::TaggedHasher<Dog::Id>;
     using DogIdToIndex = std::unordered_map<Dog::Id, size_t, DogIdHasher>;
-    std::vector<Dog> dogs_;
+    Dogs dogs_;
     DogIdToIndex dog_id_to_index_;
     Map current_map_;
 };
@@ -341,13 +343,13 @@ private:
 
 class Player{
 public:  
-    Player(GameSession& session, Dog& dog, Token token)
-        : session_(session), dog_(dog), token_(std::move(token)) {}
+    Player(GameSession& session, std::shared_ptr<Dog> dog, Token token)
+        : session_(session), dog_(std::move(dog)), token_(std::move(token)) {}
 
     GameSession& GetSession() noexcept {
         return session_;
     }
-    Dog& GetDog()noexcept {
+    std::shared_ptr<Dog> GetDog() noexcept {
         return dog_;
     }
     const Token& GetToken() const noexcept {
@@ -356,16 +358,17 @@ public:
     
 private:
     GameSession& session_;
-    Dog& dog_;
+    std::shared_ptr<Dog> dog_;
     Token token_;
     
 };
 class Players{
 public:
-    static Player& AddPlayer(std::string dog, GameSession* session);
+    static Player& AddPlayer(std::string dog_name, GameSession* session);
     static Player* findPlayerByToken(Token& token);
-private:
     static std::vector<Player> players_;
+private:
+    
 };
 
 

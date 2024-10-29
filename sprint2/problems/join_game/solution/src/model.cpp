@@ -34,17 +34,35 @@ void Game::AddMap(Map map) {
         }
     }
 }
-Dog& GameSession::AddDog(std::string name) {
+Dog& GameSession::AddDog(std::string name, const Road& road, const Speed& dog_speed_initial) {
     size_t index = dogs_.size();
     model::Dog::Id dog_id{index};
-    std::cout << "DOGID" << *dog_id << std::endl;
-    Dog dog(dog_id, name);
+    Coordinate random_coordinate ={0,0};
+
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    /*
+    if (road.IsHorizontal()) {
+        // Если дорога горизонтальная, выбираем случайную координату по оси X между start и end
+        std::uniform_real_distribution<> dis_x(road.GetStart().x, road.GetEnd().x);
+        random_coordinate.x = dis_x(gen);
+        random_coordinate.y = road.GetStart().y;  // y остаётся неизменным
+    } else if (road.IsVertical()) {
+        // Если дорога вертикальная, выбираем случайную координату по оси Y между start и end
+        std::uniform_real_distribution<> dis_y(road.GetStart().y, road.GetEnd().y);
+        random_coordinate.y = dis_y(gen);
+        random_coordinate.x = road.GetStart().x;  // x остаётся неизменным
+    }*/
+
+    // Направление пса по умолчанию — север
+    Direction initial_direction = Direction::NORTH;
+    Dog dog(dog_id, name,random_coordinate, dog_speed_initial, initial_direction);
+    // std::cout<<"initial coord"<<road.GetStart().x <<" "<<road.GetStart().y<<std::endl<<road.GetEnd().x<<" "<<road.GetEnd().y<<std::endl;
+    // std::cout<<"Random coord"<<random_coordinate.x<<" "<<random_coordinate.y<<std::endl;
     if (auto [it, inserted] = dog_id_to_index_.emplace(dog.GetId(), index); !inserted) {
-        std::cout << "Oh no"<< std::endl;
         throw std::invalid_argument("Dog with id "s + std::to_string(*dog.GetId()) + " already exists"s);
      } else {
         try {
-            std::cout << "Oh yaaaaaaaay" << std::endl;
             dogs_.emplace_back(dog);
             return dogs_.back();   
         } catch (...) {
@@ -64,11 +82,17 @@ std::vector<Player> Players::players_;
 Player& Players::AddPlayer(std::string dog, GameSession* session) {
     PlayerTokens pltk_;
     Token token = pltk_.generateToken();
-    Player player_(*session, session->AddDog(dog), token);
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    auto roads_count = session->GetMap().GetRoads().size();
+    std::uniform_int_distribution<> dis(0, roads_count - 1);
+    const  Road& road = session->GetMap().GetRoads()[0/*dis(gen)*/];
+    Player player_(*session, session->AddDog(dog, road,session->GetMap().GetSpeed()), token);
     players_.emplace_back(std::move(player_));
     Player& addedPlayer = players_.back();
     return addedPlayer;
 } 
+
 Player* Players::findPlayerByToken(Token& token) {
     for (auto& player : players_) {
          if (player.GetToken() == token) {

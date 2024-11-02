@@ -168,7 +168,6 @@ public:
     }
     void Tick(std::chrono::milliseconds delta){
         int millisecondsAsInt = static_cast<int>(delta.count());
-        std::cout << millisecondsAsInt << std::endl;
         UpdateCoords(millisecondsAsInt*0.001, game_.GetGameSessions());
     }
 private:
@@ -309,22 +308,22 @@ private:
         }
         
         if (auto session_yet = game_.FindGameSessionByMap(*map); session_yet) {
-            auto& player_ = model::Players::AddPlayer(name,session_yet,random_spawn_);
+            auto player_ = players_.AddPlayer(name,*session_yet,random_spawn_);
             json::object player_json{
-                {"authToken",  *(player_.GetToken())},
-                {"playerId", *(player_.GetDog()->GetId())}
+                {"authToken",  *(players_.players_.back().get()->GetToken())},
+                {"playerId", *(players_.players_.back().get()->GetDog()->GetId())}
             };
             sendResponseToAuth(std::move(req), std::move(send), player_json);
             
         
         } else {
             std::cout<<"of no"<< std::endl;
-            auto& new_session = game_.AddGameSession(*map);
-            std::cout<<"new: " << *(new_session.GetId())<<std::endl;
-            auto& player_ = model::Players::AddPlayer(name, &new_session, random_spawn_);
+            auto new_session = game_.AddGameSession(*map);
+            //std::cout<<"new: " << *(new_session.GetId())<<std::endl;
+            auto player_ = players_.AddPlayer(name, new_session, random_spawn_);
             json::object player_json{
-                {"authToken",  *(player_.GetToken())},
-                {"playerId", *(player_.GetDog()->GetId())}
+                {"authToken",  *(players_.players_.back().get()->GetToken())},
+                {"playerId", *(players_.players_.back().get()->GetDog()->GetId())}
             };
             sendResponseToAuth(std::move(req), std::move(send), player_json);
         }
@@ -349,14 +348,13 @@ private:
             return;
         }
             Token token{token_str};
-            auto player_ = model::Players::findPlayerByToken(token);
+            auto player_ = players_.findPlayerByToken(token);
             if (!player_) {
                 send(badToken(std::move(req)));
             } else {
             json::object players;
             int index = 0;
-            for(auto& dog :player_->GetSession().GetDogs()){
-                cout << index << dog.get()->GetName() << endl;
+            for(auto& dog :player_->get()->GetSession().get()->GetDogs()){
                 players[std::to_string(index++)] =json::object{
                     {"name", dog.get()->GetName()}
                     };
@@ -384,12 +382,17 @@ private:
             return;
         }
             Token token{token_str};
-            auto player_ = model::Players::findPlayerByToken(token);
+            auto player_ = players_.findPlayerByToken(token);
+            
             if (!player_) {
                 send(badToken(std::move(req)));
             } else {
+            std::cout <<*(player_->get()->GetToken())<<std::endl;
+            std::cout<< (player_->get()->GetDog().get()->GetName())<<std::endl;
+            //std::cout <<*(player_->get()->GetSession().GetId())<<"   " <<*(player_->get()->GetSession().GetMap().GetId())<<std::endl;
             json::object players;
-            for(auto& dog :player_->GetSession().GetDogs()){
+            for(auto dog :player_->get()->GetSession().get()->GetDogs()){  
+                std::cout <<*(player_->get()->GetToken())<<std::endl;
                 players[std::to_string(*(dog.get()->GetId()))] = json::object{
                     {"pos", json::array{dog.get()->GetCoordinate().x, dog.get()->GetCoordinate().y}},
                     {"speed",json::array{ dog.get()->GetSpeed().vx, dog.get()->GetSpeed().vy}},
@@ -397,7 +400,7 @@ private:
                     };
             }
             json::object response;
-            response["players"] = players;
+            response["players"] = players; 
             sendResponseToAuth(std::move(req), std::move(send), response); 
             } 
     }
@@ -421,7 +424,7 @@ private:
             return;
         }
             Token token{token_str};
-            auto player_ = model::Players::findPlayerByToken(token);
+            auto player_ = players_.findPlayerByToken(token);
             if (!player_) {
                 send(badToken(std::move(req)));
                 return;
@@ -433,25 +436,25 @@ private:
                     return;
                 }
                 std::string move_key = std::string(json_body.at("move").as_string());
-                std::cout<<"dog id1: " << *(player_->GetDog().get()->GetId()) << std::endl;
-                if (move_key=="L") {
-                    player_->GetDog().get()->SetDirection(model::Direction::WEST);
-                    player_->GetDog().get()->SetSpeed(model::Speed(-(player_->GetSession().GetMap().GetSpeed().vx),0));
+                //std::cout<<"dog id1: " << *(player_->GetDog().get()->GetId()) << std::endl;
+                 if (move_key=="L") {
+                    player_->get()->GetDog().get()->SetDirection(model::Direction::WEST);
+                    player_->get()->GetDog().get()->SetSpeed(model::Speed(-(player_->get()->GetSession().get()->GetMap().GetSpeed().vx),0));
                 } else if (move_key=="R") {
-                    player_->GetDog().get()->SetDirection(model::Direction::EAST);
-                    player_->GetDog().get()->SetSpeed(model::Speed(player_->GetSession().GetMap().GetSpeed().vx, 0));
+                    player_->get()->GetDog().get()->SetDirection(model::Direction::EAST);
+                    player_->get()->GetDog().get()->SetSpeed(model::Speed(player_->get()->GetSession().get()->GetMap().GetSpeed().vx, 0));
                 } else if (move_key=="U") {
-                    player_->GetDog().get()->SetDirection(model::Direction::NORTH);
-                    player_->GetDog().get()->SetSpeed(model::Speed(0,-(player_->GetSession().GetMap().GetSpeed().vy)));
+                    player_->get()->GetDog().get()->SetDirection(model::Direction::NORTH);
+                    player_->get()->GetDog().get()->SetSpeed(model::Speed(0,-(player_->get()->GetSession().get()->GetMap().GetSpeed().vy)));
                 } else if (move_key=="D") {
-                    std::cout<<"dog dir1: " << player_->GetDog().get()->GetDirection() << std::endl;
-                    std::cout<<"dog speed1" << player_->GetDog().get()->GetSpeed().vx <<" " << player_->GetDog().get()->GetSpeed().vy << std::endl;
-                    player_->GetDog().get()->SetDirection(model::Direction::SOUTH);
-                    player_->GetDog().get()->SetSpeed(model::Speed(0,player_->GetSession().GetMap().GetSpeed().vy));
-                    std::cout<<"dog dir2: " << player_->GetDog().get()->GetDirection() << std::endl;
-                    std::cout<<"dog speed2" << player_->GetDog().get()->GetSpeed().vx <<" " << player_->GetDog().get()->GetSpeed().vy << std::endl;
+                    // std::cout<<"dog dir1: " << player_->GetDog().get()->GetDirection() << std::endl;
+                    // std::cout<<"dog speed1" << player_->GetDog().get()->GetSpeed().vx <<" " << player_->GetDog().get()->GetSpeed().vy << std::endl;
+                    player_->get()->GetDog().get()->SetDirection(model::Direction::SOUTH);
+                    player_->get()->GetDog().get()->SetSpeed(model::Speed(0,player_->get()->GetSession().get()->GetMap().GetSpeed().vy));
+                    // std::cout<<"dog dir2: " << player_->GetDog().get()->GetDirection() << std::endl;
+                    // std::cout<<"dog speed2" << player_->GetDog().get()->GetSpeed().vx <<" " << player_->GetDog().get()->GetSpeed().vy << std::endl;
                 } else if (move_key.empty()){
-                    player_->GetDog().get()->SetSpeed(model::Speed(0,0));
+                    player_->get()->GetDog().get()->SetSpeed(model::Speed(0,0));
                 }
                 json::object response;
                 sendResponseToAuth(std::move(req), std::move(send), response); 
@@ -460,14 +463,14 @@ private:
 
     void UpdateCoords(double time_delta, model::Game::GameSessions& session) {
         for (auto& session : game_.GetGameSessions()) {
-            for (auto& dog_ : session.GetDogs()) {
+            for (auto& dog_ : session.get()->GetDogs()) {
                 auto dog = dog_.get();
-                auto cur_road = dog->GetCurrentRoad(session.GetMap().GetRoads(),dog->GetCoordinate());
+                auto cur_road = dog->GetCurrentRoad(session.get()->GetMap().GetRoads(),dog->GetCoordinate());
                 if (dog->GetDirectionENUM() == model::Direction::NORTH || dog->GetDirectionENUM() == model::Direction::SOUTH) {
                     model::Coordinate new_coord = {dog->GetCoordinate().x, dog->GetCoordinate().y + time_delta * dog->GetSpeed().vy};
                     if (cur_road->IsHorizontal()){
-                        auto new_vertical_road_up =dog->GetCurrentRoad(session.GetMap().GetRoads(), {static_cast<double>(dog->GetCoordinate().x), static_cast<double>(cur_road->GetStart().y+1)});
-                        auto new_vertical_road_down =dog->GetCurrentRoad(session.GetMap().GetRoads(), { static_cast<double>(dog->GetCoordinate().x), static_cast<double>(cur_road->GetStart().y-1)});
+                        auto new_vertical_road_up =dog->GetCurrentRoad(session.get()->GetMap().GetRoads(), {static_cast<double>(dog->GetCoordinate().x), static_cast<double>(cur_road->GetStart().y+1)});
+                        auto new_vertical_road_down =dog->GetCurrentRoad(session.get()->GetMap().GetRoads(), { static_cast<double>(dog->GetCoordinate().x), static_cast<double>(cur_road->GetStart().y-1)});
                         if (!(new_coord.y <= cur_road->GetStart().y + 0.4)){
                             if (new_vertical_road_up == nullptr){
                                 dog->SetCoordinateY(cur_road->GetStart().y + 0.4);
@@ -479,7 +482,7 @@ private:
                                 if(new_coord.y >= max_coord+0.4){
                                     dog->SetCoordinateY(max_coord+0.4);
                                     dog->SetSpeed({0,0});
-                                    auto new_vertical_road_up =dog->GetCurrentRoad(session.GetMap().GetRoads(), {dog->GetCoordinate().x, max_coord+1});
+                                    auto new_vertical_road_up =dog->GetCurrentRoad(session.get()->GetMap().GetRoads(), {dog->GetCoordinate().x, max_coord+1});
                                 } else {
                                     //dog.SetSpeed(dog_speed_for_new_coord);
                                     dog->SetCoordinateY(new_coord.y);
@@ -500,7 +503,7 @@ private:
                                 if (new_coord.y <= min_coord - 0.4) {
                                     dog->SetCoordinateY(min_coord-0.4);
                                     dog->SetSpeed({0,0});
-                                    auto new_vertical_road_down =dog->GetCurrentRoad(session.GetMap().GetRoads(), {dog->GetCoordinate().x, min_coord-1});
+                                    auto new_vertical_road_down =dog->GetCurrentRoad(session.get()->GetMap().GetRoads(), {dog->GetCoordinate().x, min_coord-1});
                                 } else {
                                     //dog.SetSpeed(dog_speed_for_new_coord);
                                     dog->SetCoordinateY(new_coord.y);
@@ -515,8 +518,8 @@ private:
                     } else if (cur_road->IsVertical()){
                         double max_coord_cur_y =std::max(cur_road->GetStart().y,cur_road->GetEnd().y); 
                         double min_coord_cur_y =std::min(cur_road->GetStart().y,cur_road->GetEnd().y); 
-                        auto new_vertical_road_up =dog->GetCurrentRoad(session.GetMap().GetRoads(), {dog->GetCoordinate().x, max_coord_cur_y+1});
-                        auto new_vertical_road_down =dog->GetCurrentRoad(session.GetMap().GetRoads(), {dog->GetCoordinate().x, min_coord_cur_y-1});
+                        auto new_vertical_road_up =dog->GetCurrentRoad(session.get()->GetMap().GetRoads(), {dog->GetCoordinate().x, max_coord_cur_y+1});
+                        auto new_vertical_road_down =dog->GetCurrentRoad(session.get()->GetMap().GetRoads(), {dog->GetCoordinate().x, min_coord_cur_y-1});
                         if(!(new_coord.y <= max_coord_cur_y+0.4)){
                             if (new_vertical_road_up == nullptr){
                                 dog->SetCoordinateY(max_coord_cur_y + 0.4);
@@ -528,7 +531,7 @@ private:
                                 if (new_coord.y >= max_coord_new_y+0.4) {
                                     dog->SetCoordinateY(max_coord_new_y+0.4);
                                     dog->SetSpeed({0,0});
-                                    auto new_vertical_road_up =dog->GetCurrentRoad(session.GetMap().GetRoads(), {dog->GetCoordinate().x, max_coord_new_y+1});
+                                    auto new_vertical_road_up =dog->GetCurrentRoad(session.get()->GetMap().GetRoads(), {dog->GetCoordinate().x, max_coord_new_y+1});
                                 } else {
                                     //dog.SetSpeed(dog_speed_for_new_coord);
                                     dog->SetCoordinateY(new_coord.y);
@@ -547,7 +550,7 @@ private:
                                 if (new_coord.y <= min_coord_new_y - 0.4) {
                                     dog->SetCoordinateY(min_coord_new_y-0.4);
                                     dog->SetSpeed({0,0});
-                                    auto new_vertical_road_down =dog->GetCurrentRoad(session.GetMap().GetRoads(), {dog->GetCoordinate().x, min_coord_new_y-1});
+                                    auto new_vertical_road_down =dog->GetCurrentRoad(session.get()->GetMap().GetRoads(), {dog->GetCoordinate().x, min_coord_new_y-1});
                                 } else {
                                     //dog.SetSpeed(dog_speed_for_new_coord);
                                     dog->SetCoordinateY(new_coord.y);
@@ -564,8 +567,8 @@ private:
                     //Поменять ОБРАЩЕНИЕ К СКОРОСТИ
                     model::Coordinate new_coord = {dog->GetCoordinate().x + time_delta * dog->GetSpeed().vx, dog->GetCoordinate().y};
                     if (cur_road->IsVertical()) { 
-                        auto new_horizontal_road_right =dog->GetCurrentRoad(session.GetMap().GetRoads(), { static_cast<double>(cur_road->GetStart().x+1), static_cast<double>(dog->GetCoordinate().y)});
-                        auto new_horizontal_road_left =dog->GetCurrentRoad(session.GetMap().GetRoads(), { static_cast<double>(cur_road->GetStart().x-1), static_cast<double>(dog->GetCoordinate().y) });
+                        auto new_horizontal_road_right =dog->GetCurrentRoad(session.get()->GetMap().GetRoads(), { static_cast<double>(cur_road->GetStart().x+1), static_cast<double>(dog->GetCoordinate().y)});
+                        auto new_horizontal_road_left =dog->GetCurrentRoad(session.get()->GetMap().GetRoads(), { static_cast<double>(cur_road->GetStart().x-1), static_cast<double>(dog->GetCoordinate().y) });
                         if (!(new_coord.x <= cur_road->GetStart().x + 0.4)){
                             if (new_horizontal_road_right == nullptr)  {
                                 dog->SetCoordinateX(cur_road->GetStart().x + 0.4);
@@ -577,7 +580,7 @@ private:
                                 if(new_coord.x >= max_coord_right_x+0.4){
                                     dog->SetCoordinateX(max_coord_right_x+0.4);
                                     dog->SetSpeed({0,0});
-                                    auto new_horizontal_road_right =dog->GetCurrentRoad(session.GetMap().GetRoads(), {max_coord_right_x+1, dog->GetCoordinate().y});
+                                    auto new_horizontal_road_right =dog->GetCurrentRoad(session.get()->GetMap().GetRoads(), {max_coord_right_x+1, dog->GetCoordinate().y});
                                 } else {
                                     //dog.SetSpeed(dog_speed_for_new_coord);
                                     dog->SetCoordinateX(new_coord.x);
@@ -596,7 +599,7 @@ private:
                                 if (new_coord.x <= min_coord_left_x - 0.4) {
                                     dog->SetCoordinateX(min_coord_left_x-0.4);
                                     dog->SetSpeed({0,0});
-                                    auto new_horizontal_road_left =dog->GetCurrentRoad(session.GetMap().GetRoads(), {min_coord_left_x-1, dog->GetCoordinate().y });
+                                    auto new_horizontal_road_left =dog->GetCurrentRoad(session.get()->GetMap().GetRoads(), {min_coord_left_x-1, dog->GetCoordinate().y });
                                 } else {
                                     //dog.SetSpeed(dog_speed_for_new_coord);
                                     dog->SetCoordinateX(new_coord.x);
@@ -611,8 +614,8 @@ private:
                     } else if (cur_road->IsHorizontal()){
                         double max_coord_cur_x =std::max(cur_road->GetStart().x,cur_road->GetEnd().x); 
                         double min_coord_cur_x =std::min(cur_road->GetStart().x,cur_road->GetEnd().x); 
-                        auto new_horizontal_road_right =dog->GetCurrentRoad(session.GetMap().GetRoads(), {max_coord_cur_x+1, dog->GetCoordinate().y});
-                        auto new_horizontal_road_left =dog->GetCurrentRoad(session.GetMap().GetRoads(), {min_coord_cur_x-1, dog->GetCoordinate().y});
+                        auto new_horizontal_road_right =dog->GetCurrentRoad(session.get()->GetMap().GetRoads(), {max_coord_cur_x+1, dog->GetCoordinate().y});
+                        auto new_horizontal_road_left =dog->GetCurrentRoad(session.get()->GetMap().GetRoads(), {min_coord_cur_x-1, dog->GetCoordinate().y});
                         if(!(new_coord.x <= max_coord_cur_x+0.4)){
                             if (new_horizontal_road_right == nullptr) {
                                 dog->SetCoordinateX(max_coord_cur_x + 0.4);
@@ -623,7 +626,7 @@ private:
                                 if (new_coord.x >= max_coord_new_x+0.4) {
                                     dog->SetCoordinateX(max_coord_new_x+0.4);
                                     dog->SetSpeed({0,0});
-                                    auto new_horizontal_road_right =dog->GetCurrentRoad(session.GetMap().GetRoads(), {max_coord_new_x+1, dog->GetCoordinate().y});
+                                    auto new_horizontal_road_right =dog->GetCurrentRoad(session.get()->GetMap().GetRoads(), {max_coord_new_x+1, dog->GetCoordinate().y});
                                 } else {
                                     //dog.SetSpeed(dog_speed_for_new_coord);
                                     dog->SetCoordinateX(new_coord.x);
@@ -642,7 +645,7 @@ private:
                                 if (new_coord.x <= min_coord_new_x - 0.4) {
                                     dog->SetCoordinateX(min_coord_new_x-0.4);
                                     dog->SetSpeed({0,0});
-                                    auto new_horizontal_road_left =dog->GetCurrentRoad(session.GetMap().GetRoads(), {min_coord_new_x-1, dog->GetCoordinate().y});
+                                    auto new_horizontal_road_left =dog->GetCurrentRoad(session.get()->GetMap().GetRoads(), {min_coord_new_x-1, dog->GetCoordinate().y});
                                 } else {
                                     //dog.SetSpeed(dog_speed_for_new_coord);
                                     dog->SetCoordinateX(new_coord.x);
@@ -885,6 +888,7 @@ private:
         return res;
     }
 
+    model::Players players_;
     model::Game& game_;
     std::string path_;
     bool random_spawn_;

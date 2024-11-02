@@ -78,8 +78,8 @@ GameSession& Game::AddGameSession(const Map& map_) {
     sessions_.emplace_back(std::move(session));
     return sessions_.back();
 }
-std::vector<Player> Players::players_;
-Player& Players::AddPlayer(std::string dog_name, GameSession* session) {
+
+Players::PlayerPointer Players::AddPlayer(std::string dog_name, GameSession* session) {
     PlayerTokens pltk_;
     Token token = pltk_.generateToken();
     
@@ -89,15 +89,18 @@ Player& Players::AddPlayer(std::string dog_name, GameSession* session) {
     std::uniform_int_distribution<> dis(0, static_cast<int>(roads_count - 1));
     const  Road& road = session->GetMap().GetRoads()[0/*dis(gen)*/];
     auto dog = session->AddDog(dog_name, road, model::Speed(0,0));
-    Player player_(*session, dog, token);
+    std::cout<<"here 1"<< std::endl;
+    auto player_ =std::make_shared<Player>(*session, dog, token);
+    std::cout<<"here 2"<< std::endl;
     players_.emplace_back(std::move(player_));
-    Player& addedPlayer = players_.back();
-    return addedPlayer;
+    std::cout<<"here 3"<< std::endl;
+    return player_;
+    std::cout<<"here 4"<< std::endl;
 } 
 
-Player* Players::findPlayerByToken(Token& token) {
+Players::PlayerPointer* Players::findPlayerByToken(Token& token) {
     for (auto& player : players_) {
-         if (player.GetToken() == token) {
+         if (player->GetToken() == token) {
              return &player;
          }
     }

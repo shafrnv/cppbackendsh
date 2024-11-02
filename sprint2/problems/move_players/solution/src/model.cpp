@@ -88,13 +88,16 @@ Player& Players::AddPlayer(std::string dog, GameSession* session) {
     std::uniform_int_distribution<> dis(0, roads_count - 1);
     const  Road& road = session->GetMap().GetRoads()[dis(gen)];
     Player player_(*session, session->AddDog(dog, road,session->GetMap().GetSpeed()), token);
+    std::cout <<"add pl" <<std::endl;
     players_.emplace_back(std::move(player_));
     Player& addedPlayer = players_.back();
     return addedPlayer;
 } 
 Player* Players::findPlayerByToken(Token& token) {
     for (auto& player : players_) {
+            std::cout<<*(player.GetToken())<<*(player.GetDog().GetId())<<std::endl;
          if (player.GetToken() == token) {
+            std::cout<<"find pl"<<std::endl;
              return &player;
          }
     }

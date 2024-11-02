@@ -1,3 +1,8 @@
 {
-    "cmake.sourceDirectory": "/home/shafrnv/cpp-backend/sprint2/problems/command_line/solution"
+    "cmake.sourceDirectory": "/home/shafrnv/cpp-backend/sprint2/problems/command_line/solution",
+    "files.associations": {
+        "*.tcc": "cpp",
+        "deque": "cpp",
+        "vector": "cpp"
+    }
 }

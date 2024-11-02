@@ -343,10 +343,10 @@ private:
 
 class Player{
 public:  
-    Player(GameSession& session, std::shared_ptr<Dog> dog, Token token)
+    Player(std::shared_ptr<GameSession> session, std::shared_ptr<Dog> dog, Token token)
         : session_(session), dog_(std::move(dog)), token_(std::move(token)) {}
 
-    GameSession& GetSession() noexcept {
+    std::shared_ptr<GameSession> GetSession() noexcept {
         return session_;
     }
     std::shared_ptr<Dog> GetDog() noexcept {
@@ -357,16 +357,23 @@ public:
     }
     
 private:
-    GameSession& session_;
+    std::shared_ptr<GameSession> session_;
     std::shared_ptr<Dog> dog_;
     Token token_;
     
 };
 class Players{
 public:
-    static Player& AddPlayer(std::string dog_name, GameSession* session, bool random_coords);
-    static Player* findPlayerByToken(Token& token);
-    static std::vector<Player> players_;
+    using PlayerPointer = std::shared_ptr<Player>;
+    using Players_ = std::vector<PlayerPointer>;
+    
+    Players::PlayerPointer AddPlayer(std::string dog_name, std::shared_ptr<GameSession>, bool random_points);
+    Players::PlayerPointer* findPlayerByToken(Token& token);
+
+    Players_& GetPlayers() noexcept {
+        return players_;
+    }
+    Players_ players_;
 private:
     
 };
@@ -374,10 +381,12 @@ private:
 
 class Game {
 public:
+    using GameSessionPointer = std::shared_ptr<GameSession>;
+    using GameSessions = std::vector<GameSessionPointer>;
+
     using Maps = std::vector<Map>;
-    using GameSessions = std::vector<GameSession>;
     void AddMap(Map map);
-    GameSession& AddGameSession(const Map& map_);
+    std::shared_ptr<GameSession> AddGameSession(const Map& map_);
     const Maps& GetMaps() const noexcept {
         return maps_;
     }
@@ -392,9 +401,9 @@ public:
         return nullptr;
     }
 
-    GameSession* FindGameSessionByMap(const Map& map) noexcept {
+    GameSessionPointer* FindGameSessionByMap(const Map& map) noexcept {
         for(auto& session: sessions_){
-            if (session.GetMap().GetId() == map.GetId()){
+            if (session.get()->GetMap().GetId() == map.GetId()){
                 return &session;
             }
         }
@@ -408,7 +417,7 @@ private:
     MapIdToIndex map_id_to_index_;
     using GameSessionIdHasher = util::TaggedHasher<GameSession::Id>;
     using GameSessionIdToIndex = std::unordered_map<GameSession::Id, size_t, GameSessionIdHasher>;
-    std::vector<GameSession> sessions_;
+    GameSessions sessions_;
     GameSessionIdToIndex session_id_to_index_;
     int time_delta;
 };

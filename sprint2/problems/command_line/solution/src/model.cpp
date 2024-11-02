@@ -71,41 +71,47 @@ GameSession::DogPointer GameSession::AddDog(std::string name, const Road& road, 
         }
     };
 }
-GameSession& Game::AddGameSession(const Map& map_) {
+std::shared_ptr<GameSession> Game::AddGameSession(const Map& map_) {
     size_t index = sessions_.size();
     model::GameSession::Id session_id{std::to_string(index)};
-    GameSession session(session_id, map_);
+    auto session = std::make_shared<GameSession>(session_id, map_);
     sessions_.emplace_back(std::move(session));
     return sessions_.back();
 }
-std::vector<Player> Players::players_;
-Player& Players::AddPlayer(std::string dog_name, GameSession* session, bool random_points) {
+
+Players::PlayerPointer Players::AddPlayer(std::string dog_name, std::shared_ptr<GameSession> session, bool random_points) {
     PlayerTokens pltk_;
     Token token = pltk_.generateToken();
+
     if (random_points) {
         std::random_device rd;
         std::mt19937 gen(rd());
-        auto roads_count = session->GetMap().GetRoads().size();
+        auto roads_count = session.get()->GetMap().GetRoads().size();
         std::uniform_int_distribution<> dis(0, static_cast<int>(roads_count - 1));
-        const  Road& road = session->GetMap().GetRoads()[dis(gen)];
-        auto dog = session->AddDog(dog_name, road, model::Speed(0,0));
-        Player player_(*session, dog, token);
+        const  Road& road = session.get()->GetMap().GetRoads()[dis(gen)];
+        auto dog = session.get()->AddDog(dog_name, road, model::Speed(0,0));
+        auto player_ =std::make_shared<Player>(session, dog, token);
         players_.emplace_back(std::move(player_));
     } else {
-        const  Road& road = session->GetMap().GetRoads()[0];
-        auto dog = session->AddDog(dog_name, road, model::Speed(0,0));
-        Player player_(*session, dog, token);
+        const  Road& road = session.get()->GetMap().GetRoads()[0];
+        auto dog = session.get()->AddDog(dog_name, road, model::Speed(0,0));
+        auto player_ =std::make_shared<Player>(session, dog, token);
         players_.emplace_back(std::move(player_));
     }
     return players_.back();
 } 
 
-Player* Players::findPlayerByToken(Token& token) {
-    for (auto& player : players_) {
-         if (player.GetToken() == token) {
+Players::PlayerPointer* Players::findPlayerByToken(Token& token) {
+    for (PlayerPointer& player : players_) {
+         if (player.get()->GetToken() == token) {
+            std::cout<< "good1"<<std::endl;
+            std::cout<< (player.get()->GetDog().get()->GetName())<<std::endl;
+            std::cout<< "good2"<<std::endl;
+            //std::cout<< *(player.get()->GetSession)<<std::endl;
+            std::cout<< "good3"<<std::endl;
              return &player;
          }
-    }
+    }   
     return nullptr;
 }
 }  // namespace model

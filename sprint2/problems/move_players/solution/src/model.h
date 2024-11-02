@@ -330,10 +330,10 @@ private:
 };
 class Players{
 public:
-    static Player& AddPlayer(std::string dog, GameSession* session);
-    static Player* findPlayerByToken(Token& token);
+    Player& AddPlayer(std::string dog, GameSession* session);
+    Player* findPlayerByToken(Token& token);
 private:
-    static std::vector<Player> players_;
+    std::vector<Player> players_;
 };
 
 

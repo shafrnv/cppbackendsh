@@ -351,10 +351,10 @@ private:
         }
         
         if (auto session_yet = game_.FindGameSessionByMap(*map); session_yet) {
-            auto& player_ = model::Players::AddPlayer(name,session_yet);
+            auto player_ = players_.AddPlayer(name,session_yet);
             json::object player_json{
-                {"authToken",  *(player_.GetToken())},
-                {"playerId", *(player_.GetDog()->GetId())}
+                {"authToken",  *(players_.players_.back().get()->GetToken())},
+                {"playerId", *(players_.players_.back().get()->GetDog()->GetId())}
             };
             sendResponseToAuth(std::move(req), std::move(send), player_json);
             
@@ -363,11 +363,14 @@ private:
             std::cout<<"of no"<< std::endl;
             auto& new_session = game_.AddGameSession(*map);
             std::cout<<"new: " << *(new_session.GetId())<<std::endl;
-            auto& player_ = model::Players::AddPlayer(name, &new_session);
+            auto player_ = players_.AddPlayer(name, &new_session);
+            std::cout<<"here 6"<< std::endl;
+            std::cout<< *(players_.players_.back().get()->GetToken()) << std::endl;
             json::object player_json{
-                {"authToken",  *(player_.GetToken())},
-                {"playerId", *(player_.GetDog()->GetId())}
+                {"authToken",  *(players_.players_.back().get()->GetToken())},
+                {"playerId", *(players_.players_.back().get()->GetDog()->GetId())}
             };
+            std::cout<<"here 7"<< std::endl;
             sendResponseToAuth(std::move(req), std::move(send), player_json);
         }
     }
@@ -391,14 +394,14 @@ private:
             return;
         }
             Token token{token_str};
-            auto player_ = model::Players::findPlayerByToken(token);
+            auto player_ = players_.findPlayerByToken(token);
             if (!player_) {
                 send(badToken(std::move(req)));
             } else {
             json::object players;
             int index = 0;
-            for(auto& dog :player_->GetSession().GetDogs()){
-                cout << index << dog.get()->GetName() << endl;
+            for(auto& dog :player_->get()->GetSession().GetDogs()){
+                //cout << index << dog.get()->GetName() << endl;
                 players[std::to_string(index++)] =json::object{
                     {"name", dog.get()->GetName()}
                     };
@@ -426,12 +429,12 @@ private:
             return;
         }
             Token token{token_str};
-            auto player_ = model::Players::findPlayerByToken(token);
+            auto player_ = players_.findPlayerByToken(token);
             if (!player_) {
                 send(badToken(std::move(req)));
             } else {
             json::object players;
-            for(auto& dog :player_->GetSession().GetDogs()){
+            for(auto& dog :player_->get()->GetSession().GetDogs()){
                 players[std::to_string(*(dog.get()->GetId()))] = json::object{
                     {"pos", json::array{dog.get()->GetCoordinate().x, dog.get()->GetCoordinate().y}},
                     {"speed",json::array{ dog.get()->GetSpeed().vx, dog.get()->GetSpeed().vy}},
@@ -463,7 +466,7 @@ private:
             return;
         }
             Token token{token_str};
-            auto player_ = model::Players::findPlayerByToken(token);
+            auto player_ = players_.findPlayerByToken(token);
             if (!player_) {
                 send(badToken(std::move(req)));
                 return;
@@ -475,25 +478,25 @@ private:
                     return;
                 }
                 std::string move_key = std::string(json_body.at("move").as_string());
-                std::cout<<"dog id1: " << *(player_->GetDog().get()->GetId()) << std::endl;
+                //std::cout<<"dog id1: " << *(player_->GetDog().get()->GetId()) << std::endl;
                 if (move_key=="L") {
-                    player_->GetDog().get()->SetDirection(model::Direction::WEST);
-                    player_->GetDog().get()->SetSpeed(model::Speed(-(player_->GetSession().GetMap().GetSpeed().vx),0));
+                    player_->get()->GetDog().get()->SetDirection(model::Direction::WEST);
+                    player_->get()->GetDog().get()->SetSpeed(model::Speed(-(player_->get()->GetSession().GetMap().GetSpeed().vx),0));
                 } else if (move_key=="R") {
-                    player_->GetDog().get()->SetDirection(model::Direction::EAST);
-                    player_->GetDog().get()->SetSpeed(model::Speed(player_->GetSession().GetMap().GetSpeed().vx, 0));
+                    player_->get()->GetDog().get()->SetDirection(model::Direction::EAST);
+                    player_->get()->GetDog().get()->SetSpeed(model::Speed(player_->get()->GetSession().GetMap().GetSpeed().vx, 0));
                 } else if (move_key=="U") {
-                    player_->GetDog().get()->SetDirection(model::Direction::NORTH);
-                    player_->GetDog().get()->SetSpeed(model::Speed(0,-(player_->GetSession().GetMap().GetSpeed().vy)));
+                    player_->get()->GetDog().get()->SetDirection(model::Direction::NORTH);
+                    player_->get()->GetDog().get()->SetSpeed(model::Speed(0,-(player_->get()->GetSession().GetMap().GetSpeed().vy)));
                 } else if (move_key=="D") {
-                    std::cout<<"dog dir1: " << player_->GetDog().get()->GetDirection() << std::endl;
-                    std::cout<<"dog speed1" << player_->GetDog().get()->GetSpeed().vx <<" " << player_->GetDog().get()->GetSpeed().vy << std::endl;
-                    player_->GetDog().get()->SetDirection(model::Direction::SOUTH);
-                    player_->GetDog().get()->SetSpeed(model::Speed(0,player_->GetSession().GetMap().GetSpeed().vy));
-                    std::cout<<"dog dir2: " << player_->GetDog().get()->GetDirection() << std::endl;
-                    std::cout<<"dog speed2" << player_->GetDog().get()->GetSpeed().vx <<" " << player_->GetDog().get()->GetSpeed().vy << std::endl;
+                    // std::cout<<"dog dir1: " << player_->GetDog().get()->GetDirection() << std::endl;
+                    // std::cout<<"dog speed1" << player_->GetDog().get()->GetSpeed().vx <<" " << player_->GetDog().get()->GetSpeed().vy << std::endl;
+                    player_->get()->GetDog().get()->SetDirection(model::Direction::SOUTH);
+                    player_->get()->GetDog().get()->SetSpeed(model::Speed(0,player_->get()->GetSession().GetMap().GetSpeed().vy));
+                    // std::cout<<"dog dir2: " << player_->GetDog().get()->GetDirection() << std::endl;
+                    // std::cout<<"dog speed2" << player_->GetDog().get()->GetSpeed().vx <<" " << player_->GetDog().get()->GetSpeed().vy << std::endl;
                 } else if (move_key.empty()){
-                    player_->GetDog().get()->SetSpeed(model::Speed(0,0));
+                    player_->get()->GetDog().get()->SetSpeed(model::Speed(0,0));
                 }
                 json::object response;
                 sendResponseToAuth(std::move(req), std::move(send), response); 
@@ -917,7 +920,7 @@ private:
         res.content_length(res.body().size());
         return res;
     }
-
+    model::Players players_;
     model::Game& game_;
     std::string path_;
     boost::asio::strand<boost::asio::io_context::executor_type>& strand_;

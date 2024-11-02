@@ -364,9 +364,16 @@ private:
 };
 class Players{
 public:
-    static Player& AddPlayer(std::string dog_name, GameSession* session);
-    static Player* findPlayerByToken(Token& token);
-    static std::vector<Player> players_;
+    using PlayerPointer = std::shared_ptr<Player>;
+    using Players_ = std::vector<PlayerPointer>;
+    
+    PlayerPointer AddPlayer(std::string dog_name, GameSession* session);
+    Players::PlayerPointer* findPlayerByToken(Token& token);
+
+    Players_& GetPlayers() noexcept {
+        return players_;
+    }
+    Players_ players_;
 private:
     
 };

@@ -68,6 +68,7 @@ public:
 
     template <typename Body, typename Allocator, typename Send>
     void handleRequest(http::request<Body, http::basic_fields<Allocator>>&& req, Send&& send) {
+        std::cout << "is it here" <<std::endl;
         auto target = req.target();
         std::string requested_path_in_str;
         if (target == "/") {
@@ -80,6 +81,7 @@ public:
         requested_path =  fs::weakly_canonical(requested_path);
         fs::path root_path(path_);
         root_path =  fs::weakly_canonical(root_path);
+        std::cout << "is it here2" <<std::endl;
         //Проверка на выход за корневой каталог
         if (!IsSubPath(requested_path, root_path)) {
             http::response<http::string_body> res{http::status::bad_request, req.version()};
@@ -91,6 +93,7 @@ public:
             send(std::move(res));
             return;
         }
+        std::cout << "is it here3" <<std::endl;
         http::file_body::value_type file;
         sys::error_code ec;
         if (sys::error_code ec; file.open(requested_path_in_str.c_str(), beast::file_mode::read, ec), ec) {
@@ -103,6 +106,7 @@ public:
             send(std::move(res));
             return;
         }
+        std::cout << "is it here4" <<std::endl;
         auto const size = file.size();
         http::response<http::file_body> res{http::status::ok, req.version()};
         res.set(http::field::content_type, get_mime_type(requested_path.extension()));
@@ -134,6 +138,7 @@ public:
                     handleGetPlayers(std::move(req), std::move(send));
                 }
             }else if (req.target() == "/api/v1/game/state") {
+                std::cout << "is it here6" <<std::endl;
                 if (!(req.method() == http::verb::get || req.method() == http::verb::head)) {
                     send(badMethodNotGetOrHead(std::move(req)));
                 } else{
@@ -147,7 +152,8 @@ public:
                 }
             } else if (req.target().starts_with("/api/")) {
                 send(badRequest(std::move(req)));
-            } else {    
+            } else {   
+                std::cout << "is it here5" <<std::endl;
                 handleRequest(std::move(req), std::move(send));
             }
         } catch (std::exception& e) {
@@ -353,6 +359,7 @@ private:
     }
     template <typename Body, typename Allocator, typename Send>
     void handleGetStateInformation(http::request<Body, http::basic_fields<Allocator>>&& req, Send&& send) {
+        
         if (req.find("Authorization")==req.end()) {
             send(missingAuthHeaderToAuth(std::move(req)));
             return;
@@ -365,6 +372,7 @@ private:
             send(invalidAuthHeaderToAuth(std::move(req)));
             return;
         }
+        std::cout << "is it here8" <<std::endl;
         std::string token_str = std::string(auth_header.substr(bearer_prefix.size()));
         if (token_str.empty() || token_str.size() != 32) {
             send(invalidAuthHeaderToAuth(std::move(req)));
@@ -376,7 +384,9 @@ private:
                 send(badToken(std::move(req)));
             } else {
             json::object players;
+            //ОШИБКА СЕГМЕНТИРОВАНИЯ КОГДА 2 ПЛЕЕРА std::cout << "ses" << *(player_->GetSession().GetId()) << std::endl;
             for(auto& dog :player_->GetSession().GetDogs()){
+                std::cout << "is" << *(dog.GetId()) << std::endl;
                 players[std::to_string(*(dog.GetId()))] = json::object{
                     {"pos", json::array{dog.GetCoordinate().x, dog.GetCoordinate().y}},
                     {"speed",json::array{ dog.GetSpeed().vx, dog.GetSpeed().vy}},
@@ -635,7 +645,7 @@ private:
         res.content_length(res.body().size());
         return res;
     }
-
+    model::Players players_;
     model::Game& game_;
     std::string path_;
 };

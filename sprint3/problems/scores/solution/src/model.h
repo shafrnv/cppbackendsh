@@ -413,7 +413,7 @@ private:
     Speed speed_;           // Скорость пса на карте
     Direction direction_;   // Направление пса
     BagObjects bag_;
-    int score_=0    ;
+    int score_=0;
 };
 
 class GameSession {

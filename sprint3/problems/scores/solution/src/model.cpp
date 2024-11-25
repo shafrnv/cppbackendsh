@@ -42,7 +42,7 @@ void GameSession::AddLostObject() {
     geom::Point2D random_coordinate;
     std::random_device rd;
     std::mt19937 gen(rd());
-    auto roads_count =current_map_.GetRoads().size();
+    auto roads_count = current_map_.GetRoads().size();
     std::uniform_int_distribution<> dis(0, static_cast<int>(roads_count - 1));
     std::uniform_int_distribution<> dis_type(0, static_cast<int>(loot_types_count - 1));
     const Road& road = current_map_.GetRoads()[dis(gen)];
@@ -56,7 +56,8 @@ void GameSession::AddLostObject() {
         random_coordinate.x = road.GetStart().x; 
     }
     uint item_type_ = dis_type(gen);
-    auto lost_object_ = std::make_shared<LostObject>(lost_object_id,item_type_,random_coordinate,current_map_.GetExtraData().loot_types_[item_type_].as_object().at("value").as_int64());
+    auto lost_object_ = std::make_shared<LostObject>(lost_object_id,item_type_,random_coordinate,
+                        current_map_.GetExtraData().loot_types_[item_type_].as_object().at("value").as_int64());
     lost_objects_.emplace_back(std::move(lost_object_)); 
 }
 
@@ -117,7 +118,7 @@ Players::PlayerPointer Players::AddPlayer(std::string dog_name, std::shared_ptr<
     } else {
         const  Road& road = session.get()->GetMap().GetRoads()[0];
         auto dog = session.get()->AddDog(dog_name, road, model::Speed(0,0));
-        auto player_ =std::make_shared<Player>(session, dog, token);
+        auto player_ = std::make_shared<Player>(session, dog, token);
         players_.emplace_back(std::move(player_));
     }
     return players_.back();

@@ -1,3 +1,4 @@
+#pragma_once
 #include <boost/serialization/vector.hpp>
 
 #include "model.h"

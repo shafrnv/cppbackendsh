@@ -21,7 +21,8 @@ namespace sys = boost::system;
 
 class RequestHandler {
 public:
-    explicit RequestHandler(model::Game& game, loot_gen::LootGenerator& loot_gen, std::string path_static, bool random_spawn, boost::asio::strand<boost::asio::io_context::executor_type>& strand)
+    explicit RequestHandler(model::Game& game, loot_gen::LootGenerator& loot_gen, std::string path_static, 
+                            bool random_spawn, boost::asio::strand<boost::asio::io_context::executor_type>& strand)
         : game_{game},
         loot_gen_{loot_gen},
         path_{path_static},

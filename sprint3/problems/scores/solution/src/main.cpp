@@ -136,12 +136,6 @@ struct Args {
         if (vm.count("randomize-spawn-points")) {
             args.randomize_spawn_points = true;
         }
-        if (vm.count("-state-file")) {
-
-        }
-        if (vm.count("-save-state-period")) {
-
-        }
         return args;
     } catch (const po::error &ex) {
         std::cerr << "Error: " << ex.what() << "\n";

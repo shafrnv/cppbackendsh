@@ -108,10 +108,10 @@ jobs:
       #   run: |
       #     ./cpp-backend-tests-practicum/scripts/sprint2/logger/run.sh
 
-      # - name: run tests sprint2 server_logging
-      #   run: |
-      #     cd cpp-backend-tests-practicum/scripts/sprint2
-      #     ./server_logging/run.sh
+       - name: run tests sprint2 server_logging
+         run: |
+           cd cpp-backend-tests-practicum/scripts/sprint2
+           ./server_logging/run.sh
 
       - name: run tests sprint2 join_game
         run: |

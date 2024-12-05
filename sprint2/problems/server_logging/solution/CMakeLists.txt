@@ -4,14 +4,12 @@ project(game_server CXX)
 set(CMAKE_CXX_STANDARD 20)
 
 include(${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
-conan_basic_setup()
+conan_basic_setup(TARGETS)
 
 find_package(Boost 1.78.0 REQUIRED)
-find_package(Boost REQUIRED COMPONENTS filesystem)
 if(Boost_FOUND)
   include_directories(${Boost_INCLUDE_DIRS})
 endif()
-
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
@@ -27,7 +25,16 @@ add_executable(game_server
 	src/boost_json.cpp
 	src/json_loader.h
 	src/json_loader.cpp
-	src/request_handler.cpp
 	src/request_handler.h
+	src/request_handler.cpp
+	src/loot_generator.cpp
+	src/loot_generator.h
+	src/collision_detector.h
+	src/collision_detector.cpp
+	src/geom.h
+	src/model_serialization.h
+	src/logging_handler.cpp
+	src/logging_handler.h
 )
-target_link_libraries(game_server PRIVATE Threads::Threads)
+target_include_directories(game_server PRIVATE CONAN_PKG::boost)
+target_link_libraries(game_server PRIVATE CONAN_PKG::boost CONAN_PKG::libpqxx Threads::Threads) 

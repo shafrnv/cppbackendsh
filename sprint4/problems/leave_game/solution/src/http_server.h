@@ -1,5 +1,6 @@
 #pragma once
 #include "sdk.h"
+#include "logging_handler.h"
 // boost.beast будет использовать std::string_view вместо boost::string_view
 #define BOOST_BEAST_USE_STD_STRING_VIEW
 
@@ -45,14 +46,15 @@ protected:
     using HttpRequest = http::request<http::string_body>;
 
     ~SessionBase() = default;
+    beast::tcp_stream stream_;
 private:
     // tcp_stream содержит внутри себя сокет и добавляет поддержку таймаутов
-    beast::tcp_stream stream_;
+    
     beast::flat_buffer buffer_;
     HttpRequest request_;
     void OnWrite(bool close, beast::error_code ec, [[maybe_unused]] std::size_t bytes_written) {
         if (ec) {
-            return ReportError(ec, "write"sv);
+            logging_handler::LogNetworkError(ec.value(), ec.message(), "write");
         }
 
         if (close) {
@@ -81,7 +83,7 @@ private:
             return Close();
         }
         if (ec) {
-            return ReportError(ec, "read"sv);
+            logging_handler::LogNetworkError(ec.value(), ec.message(), "read");
         }
         HandleRequest(std::move(request_));
     }
@@ -89,6 +91,9 @@ private:
     void Close() {
         beast::error_code ec;
         stream_.socket().shutdown(tcp::socket::shutdown_send, ec);
+        if (ec) {
+            logging_handler::LogNetworkError(ec.value(), ec.message(), "close");
+        }
     }
 
     // Обработку запроса делегируем подклассу
@@ -113,7 +118,7 @@ private:
         // Используется generic-лямбда функция, способная принять response произвольного типа
         request_handler_(std::move(request), [self = this->shared_from_this()](auto&& response) {
             self->Write(std::move(response));
-        });
+        },stream_.socket().remote_endpoint());
     }
     RequestHandler request_handler_;
     std::shared_ptr<SessionBase> GetSharedThis() override {
@@ -143,6 +148,8 @@ public:
         // Переводим acceptor в состояние, в котором он способен принимать новые соединения
         // Благодаря этому новые подключения будут помещаться в очередь ожидающих соединений
         acceptor_.listen(net::socket_base::max_listen_connections);
+    
+        logging_handler::LogStartServer(endpoint);
     }
     void Run() {
         DoAccept();
@@ -171,7 +178,7 @@ private:
         using namespace std::literals;
 
         if (ec) {
-            return ReportError(ec, "accept"sv);
+             logging_handler::LogNetworkError(ec.value(), ec.message(), "accept");
         }
 
         // Асинхронно обрабатываем сессию

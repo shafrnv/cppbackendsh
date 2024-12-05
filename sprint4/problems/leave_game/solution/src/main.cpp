@@ -1,5 +1,8 @@
 #include "sdk.h"
-//
+#include "json_loader.h"
+#include "logging_handler.h"
+#include "http_server.h"
+
 #include <boost/program_options.hpp>
 #include <boost/asio/signal_set.hpp>
 #include <boost/asio/io_context.hpp>
@@ -8,10 +11,7 @@
 #include <thread>
 #include <filesystem>
 #include <cassert>
-#include "json_loader.h"
-#include "request_handler.h"
 #include <optional>
-
 
 using namespace std::literals;
 
@@ -259,7 +259,7 @@ int main(int argc, const char* argv[]) {
         http_handler::RequestHandler handler{game,loot_gen,static_files_root,options->randomize_spawn_points, 
                                             options->serialize_period, options->serialization_file,
                                             options->have_save_state_period, strand};
-        
+        logging_handler::LoggingRequestHandler logger_handler{handler};
         if (options->have_serialization_file) {
             std::ifstream serialization_file(options->serialization_file, std::ios_base::binary);
             InputArchive input_archive{serialization_file};
@@ -277,8 +277,9 @@ int main(int argc, const char* argv[]) {
         // 5. Запустить обработчик HTTP-запросов, делегируя их обработчику запросов
         const auto address = net::ip::make_address("0.0.0.0");
         constexpr net::ip::port_type port = 8080;
-        http_server::ServeHttp(ioc, {address, port}, [&handler](auto&& req, auto&& send) {
-            handler(std::forward<decltype(req)>(req), std::forward<decltype(send)>(send));
+        http_server::ServeHttp(ioc, {address, port}, [&logger_handler](auto&& req, auto&& send,
+                               const auto& client_endpoint) {
+            logger_handler(std::forward<decltype(req)>(req), std::forward<decltype(send)>(send), client_endpoint);
         });
         
         // Эта надпись сообщает тестам о том, что сервер запущен и готов обрабатывать запросы
@@ -288,12 +289,12 @@ int main(int argc, const char* argv[]) {
         RunWorkers(std::max(1u, num_threads), [&ioc] {
             ioc.run();
         });
-
+        logging_handler::LogStopServer(EXIT_SUCCESS, "");
         if (options->have_serizalize){
             handler.SaveStateInformation();
         }
     } catch (const std::exception& ex) {
-        std::cerr << ex.what() << std::endl;
+        logging_handler::LogStopServer(EXIT_FAILURE, ex.what());
         return EXIT_FAILURE;
     }
 }

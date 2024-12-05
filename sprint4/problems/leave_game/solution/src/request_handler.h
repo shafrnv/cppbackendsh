@@ -1,5 +1,4 @@
 #pragma once
-#include "http_server.h"
 #include "model.h"
 #include "loot_generator.h"
 #include "model_serialization.h"
@@ -9,6 +8,7 @@
 #include <locale>
 #include <string>
 #include <fstream> 
+
 #include <boost/beast.hpp>
 #include <pqxx/pqxx>
 #include <boost/uuid/uuid.hpp>
@@ -17,6 +17,8 @@
 #include <boost/archive/text_oarchive.hpp>
 #include <boost/archive/text_iarchive.hpp>
 #include <boost/algorithm/string.hpp>
+#include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/strand.hpp>
 
 using namespace std;
 
@@ -29,6 +31,13 @@ namespace sys = boost::system;
 using InputArchive = boost::archive::text_iarchive;
 using OutputArchive = boost::archive::text_oarchive;
 using QueryParams = std::unordered_map<std::string, std::string>;
+
+// Запрос, тело которого представлено в виде строки
+using StringRequest = http::request<http::string_body>;
+// Ответ, тело которого представлено в виде строки
+using StringResponse = http::response<http::string_body>;
+// Ответ, тело которого представлено в виде файла
+using FileResponse = http::response<http::file_body>;
 
 class RequestHandler {
 public:
@@ -48,64 +57,61 @@ public:
     RequestHandler(const RequestHandler&) = delete;
     RequestHandler& operator=(const RequestHandler&) = delete;
 
-    template <typename Body, typename Allocator, typename Send>
-    void operator()(http::request<Body, http::basic_fields<Allocator>>&& req, Send&& send) {
-    boost::asio::dispatch(strand_, [this, req = std::move(req), send = std::move(send)]() mutable {
+    template <typename Body, typename Allocator>
+    std::variant<StringResponse, FileResponse> operator()(http::request<Body, http::basic_fields<Allocator>>&& req) {
         try {
             if (req.method() == http::verb::get && req.target() == "/api/v1/maps") {
-                handleGetMaps(std::move(req), std::move(send));
+                return handleGetMaps(std::move(req));
             } else if (req.target().starts_with("/api/v1/maps/")) {
                 if (req.method() == http::verb::get || req.method() == http::verb::head) {
-                    handleGetMapById(std::move(req), std::move(send));
+                    return handleGetMapById(std::move(req));
                 } else{
-                    send(badMethodNotGetOrHead(std::move(req)));
+                    return badMethodNotGetOrHead(std::move(req));
                 }
             } else if (req.target() == "/api/v1/game/join") {
                 if (req.method() == http::verb::post){
-                    handleJoinGame(std::move(req), std::move(send));
+                    return handleJoinGame(std::move(req));
                 } else {
-                    send(badMethodNotPost(std::move(req)));
+                    return badMethodNotPost(std::move(req));
                 }
             } else if (req.target() == "/api/v1/game/players") {
                 if (req.method() == http::verb::get || req.method() == http::verb::head) {
-                    handleGetPlayers(std::move(req), std::move(send));
+                    return handleGetPlayers(std::move(req));
                 } else{
-                    send(badMethodNotGetOrHead(std::move(req)));
+                    return badMethodNotGetOrHead(std::move(req));
                 }
             }else if (req.target() == "/api/v1/game/state") {
                 if (req.method() == http::verb::get || req.method() == http::verb::head) {
-                    handleGetStateInformation(std::move(req), std::move(send));
+                    return handleGetStateInformation(std::move(req));
                 } else{
-                    send(badMethodNotGetOrHead(std::move(req)));
+                    return badMethodNotGetOrHead(std::move(req));
                 }
             }else if (req.target() == "/api/v1/game/player/action") {
                 if (req.method() == http::verb::post){
-                    handleAction(std::move(req), std::move(send));
+                    return handleAction(std::move(req));
                 } else {
-                    send(badMethodNotPost(std::move(req)));
+                    return badMethodNotPost(std::move(req));
                 }
             } else if (req.target() == "/api/v1/game/tick") {
                 if (req.method() == http::verb::post) {
-                    handleMovesTick(std::move(req), std::move(send));
+                    return handleMovesTick(std::move(req));
                 } else {
-                    send(badMethodNotPost(std::move(req)));
+                    return badMethodNotPost(std::move(req));
                 }
             } else if (req.target() == "/api/v1/game/records"){
                 if (req.method() == http::verb::get || req.method() == http::verb::head) {
-                    handleGetRecords(std::move(req), std::move(send));
+                    return handleGetRecords(std::move(req));
                 } else{
-                    send(badMethodNotGetOrHead(std::move(req)));
+                    return badMethodNotGetOrHead(std::move(req));
                 }
-
             }else if (req.target().starts_with("/api/")) {
-                send(badRequest(std::move(req)));
+                return badRequest(std::move(req));
             } else {    
-                handleRequest(std::move(req), std::move(send));
+                return handleRequest(std::forward<StringRequest>(req));
             }
         } catch (std::exception& e) {
             std::cerr << "Error handling request: " << e.what() << std::endl;
         }        
-    });
     }
 
     void Tick(int delta){
@@ -245,8 +251,8 @@ public:
     }
 
 private:
-    template <typename Body, typename Allocator, typename Send>
-    void handleGetRecords(http::request<Body, http::basic_fields<Allocator>>&& req, Send&& send) {
+    template <typename Body, typename Allocator>
+    StringResponse handleGetRecords(http::request<Body, http::basic_fields<Allocator>>&& req) {
         int start = 0;
         int maxItems = 100;
 
@@ -262,8 +268,7 @@ private:
             maxItems = std::stoi(query_params.at("maxItems"));
             if (maxItems < 0) maxItems = 0;
             if (maxItems > 100) {
-                send(badRequest(std::move(req)));
-                return;
+               return badRequest(std::move(req));
             }
         }
         const char* db_url = std::getenv("GAME_DB_URL");
@@ -289,7 +294,7 @@ private:
                 {"playTime", row["play_time_ms"].as<double>()}
             });
         }
-        sendResponseToAuth(std::move(req), std::move(send), records);
+        return sendResponseToAuth(std::move(req), records);
     }
  
     template <typename Body, typename Allocator>
@@ -331,8 +336,8 @@ private:
         return query_params;
     }
 
-    template <typename Body, typename Allocator, typename Send>
-    void handleGetMaps(http::request<Body, http::basic_fields<Allocator>>&& req, Send&& send) {
+    template <typename Body, typename Allocator>
+    StringResponse handleGetMaps(http::request<Body, http::basic_fields<Allocator>>&& req) {
         json::array maps_list_;
         for (const auto& map : game_.GetMaps()) {
             std::cout << *(map.GetId()) << std::endl;
@@ -341,67 +346,57 @@ private:
                 {"name", map.GetName()}
                 });
         }
-        sendResponseToAuth(std::move(req), std::move(send), maps_list_);
+        return sendResponseToAuth(std::move(req), maps_list_);
     }
 
-    template <typename Body, typename Allocator, typename Send>
-    void handleJoinGame(http::request<Body, http::basic_fields<Allocator>>&& req, Send&& send) {
+    template <typename Body, typename Allocator>
+    StringResponse handleJoinGame(http::request<Body, http::basic_fields<Allocator>>&& req) {
         json::error_code ec;
         auto json_body = json::parse(req.body(),ec);
         if (ec) {
-            send(badParse(std::move(req)));
-            return;
+            return badParse(std::move(req));
         }
         
         if (!json_body.as_object().contains("mapId")){
-            send(mapNotContainsToAuth(std::move(req)));
-            return;
+            return mapNotContainsToAuth(std::move(req));
         }
         if (!json_body.as_object().contains("userName")){
-            send(nameNotContainsToAuth(std::move(req)));
-            return;
+            return nameNotContainsToAuth(std::move(req));
         }
+
         std::string map_id_ = std::string(json_body.at("mapId").as_string());
         std::string name = std::string(json_body.at("userName").as_string());
         
         model::Map::Id map_id{map_id_};
         auto map = game_.FindMap(map_id);
         if (!map && !name.empty()) {
-            send(invalidMapToAuth(std::move(req)));
-            return;
+            return invalidMapToAuth(std::move(req));
         }
 
         if (!map && name.empty()) {
-            send(invalidDataToAuth(std::move(req)));
-            return;
+            return invalidDataToAuth(std::move(req));
         }
 
         if (name.empty()) {
-            send(badPlayerName(std::move(req)));
-            return;
+            return badPlayerName(std::move(req));
         }
         
         if (auto session_yet = game_.FindGameSessionByMap(*map); session_yet) {
             auto player_ = players_.AddPlayer(name,*session_yet,random_spawn_);
-            json::object player_json{
-                {"authToken",  *(players_.players_.back().get()->GetToken())},
-                {"playerId", *(players_.players_.back().get()->GetDog()->GetId())}
-            };
-            sendResponseToAuth(std::move(req), std::move(send), player_json);
-            
-        
         } else {
             auto new_session = game_.AddGameSession(*map);
             auto player_ = players_.AddPlayer(name, new_session, random_spawn_);
-            json::object player_json{
+        }
+
+        json::object player_json{
                 {"authToken",  *(players_.players_.back().get()->GetToken())},
                 {"playerId", *(players_.players_.back().get()->GetDog()->GetId())}
-            };
-            sendResponseToAuth(std::move(req), std::move(send), player_json);
-        }
+        };
+
+        return sendResponseToAuth(std::move(req), player_json);
     }
-    template <typename Body, typename Allocator, typename Send>
-    void handleRequest(http::request<Body, http::basic_fields<Allocator>>&& req, Send&& send) {
+    
+    std::variant<StringResponse, FileResponse> handleRequest(StringRequest &&req) {
         auto target = req.target();
         std::string requested_path_in_str;
         if (target == "/") {
@@ -410,33 +405,34 @@ private:
             auto decoded_url = url_decode(std::string(target.data(), target.size()));
             requested_path_in_str = path_ + decoded_url;
         }
+
         fs::path requested_path(requested_path_in_str);
         requested_path =  fs::weakly_canonical(requested_path);
+
         fs::path root_path(path_);
         root_path =  fs::weakly_canonical(root_path);
 
         if (!IsSubPath(requested_path, root_path)) {
-            http::response<http::string_body> res{http::status::bad_request, req.version()};
+            StringResponse res{http::status::bad_request, req.version()};
             res.set(http::field::content_type, "text/plain");
             res.body() = "Error: Path outside of root directory.";
             res.content_length(res.body().size());
             res.keep_alive(req.keep_alive());
             res.prepare_payload();
-            send(std::move(res));
-            return;
+            return res;
         }
         http::file_body::value_type file;
 
         if (sys::error_code ec; file.open(requested_path_in_str.c_str(), beast::file_mode::read, ec), ec) {
-            http::response<http::string_body> res{http::status::not_found, req.version()};
+            StringResponse res{http::status::not_found, req.version()};
             res.set(http::field::content_type, "text/plain");
             res.body() = "Error: File not found.";
             res.content_length(res.body().size());
             res.keep_alive(req.keep_alive());
             res.prepare_payload();
-            send(std::move(res));
-            return;
+            return res;
         }
+
         auto const size = file.size();
         http::response<http::file_body> res{http::status::ok, req.version()};
         res.set(http::field::content_type, get_mime_type(requested_path.extension().string()));
@@ -444,89 +440,90 @@ private:
         res.body() = std::move(file);
         res.keep_alive(req.keep_alive());
         res.prepare_payload();
-        send(std::move(res));
+        return res;
     }
-    template <typename Body, typename Allocator, typename Send>
-    void handleAction(http::request<Body, http::basic_fields<Allocator>>&& req, Send&& send) {
+    template <typename Body, typename Allocator>
+    StringResponse handleAction(http::request<Body, http::basic_fields<Allocator>>&& req) {
         if (req.find("Authorization") == req.end()) {
-            send(missingAuthHeaderToAuth(std::move(req)));
-            return;
+            return missingAuthHeaderToAuth(std::move(req));
         }
+
         auto auth_header = req["Authorization"];
         const std::string bearer_prefix = "Bearer ";
+
         if (auth_header.size() <= bearer_prefix.size() ||
             auth_header.substr(0, bearer_prefix.size()) != bearer_prefix) 
         {
-            send(invalidAuthHeaderToAuth(std::move(req)));
-            return;
+            return invalidAuthHeaderToAuth(std::move(req));
         }
+
         std::string token_str = std::string(auth_header.substr(bearer_prefix.size()));
         if (token_str.empty() || token_str.size() != 32) {
-            send(invalidAuthHeaderToAuth(std::move(req)));
-            return;
+            return invalidAuthHeaderToAuth(std::move(req));
         }
-            Token token{token_str};
-            auto player_ = players_.findPlayerByToken(token);
-            if (!player_) {
-                send(badToken(std::move(req)));
-                return;
-            } else {
-                json::error_code ec;
-                auto json_body = json::parse(req.body(),ec);
-                if (ec) {
-                    send(badParse(std::move(req)));
-                    return;
-                }
-                std::string move_key = std::string(json_body.at("move").as_string());
-                    if (move_key=="L") {
-                    player_->GetDog().get()->SetDirection(model::Direction::WEST);
-                    player_->GetDog().get()->SetSpeed(model::Speed(-(player_->GetSession().get()->GetMap().GetSpeed().vx),0));
-                } else if (move_key=="R") {
-                    player_->GetDog().get()->SetDirection(model::Direction::EAST);
-                    player_->GetDog().get()->SetSpeed(model::Speed(player_->GetSession().get()->GetMap().GetSpeed().vx, 0));
-                } else if (move_key=="U") {
-                    player_->GetDog().get()->SetDirection(model::Direction::NORTH);
-                    player_->GetDog().get()->SetSpeed(model::Speed(0,-(player_->GetSession().get()->GetMap().GetSpeed().vy)));
-                } else if (move_key=="D") {
-                    player_->GetDog().get()->SetDirection(model::Direction::SOUTH);
-                    player_->GetDog().get()->SetSpeed(model::Speed(0,player_->GetSession().get()->GetMap().GetSpeed().vy));
-                } else if (move_key.empty()){
-                    player_->GetDog().get()->SetSpeed(model::Speed(0,0));
-                }
-                std::cout << player_->GetDog()->GetDirection() << std::endl;
-                json::object response;
-                sendResponseToAuth(std::move(req), std::move(send), response); 
+
+        Token token{token_str};
+        auto player_ = players_.findPlayerByToken(token);
+
+        if (!player_) {
+            return badToken(std::move(req));
+        } else {
+            json::error_code ec;
+            auto json_body = json::parse(req.body(),ec);
+
+            if (ec) {
+                return badParse(std::move(req));
             }
+
+            std::string move_key = std::string(json_body.at("move").as_string());
+            if (move_key=="L") {
+                player_->GetDog().get()->SetDirection(model::Direction::WEST);
+                player_->GetDog().get()->SetSpeed(model::Speed(-(player_->GetSession().get()->GetMap().GetSpeed().vx),0));
+            } else if (move_key=="R") {
+                player_->GetDog().get()->SetDirection(model::Direction::EAST);
+                player_->GetDog().get()->SetSpeed(model::Speed(player_->GetSession().get()->GetMap().GetSpeed().vx, 0));
+            } else if (move_key=="U") {
+                player_->GetDog().get()->SetDirection(model::Direction::NORTH);
+                player_->GetDog().get()->SetSpeed(model::Speed(0,-(player_->GetSession().get()->GetMap().GetSpeed().vy)));
+            } else if (move_key=="D") {
+                player_->GetDog().get()->SetDirection(model::Direction::SOUTH);
+                player_->GetDog().get()->SetSpeed(model::Speed(0,player_->GetSession().get()->GetMap().GetSpeed().vy));
+            } else if (move_key.empty()){
+                player_->GetDog().get()->SetSpeed(model::Speed(0,0));
+            }
+
+            json::object response;
+
+            return sendResponseToAuth(std::move(req), response); 
+        }
     }
 
-    template <typename Body, typename Allocator, typename Send>
-    void handleGetStateInformation(http::request<Body, http::basic_fields<Allocator>>&& req, Send&& send) {
+    template <typename Body, typename Allocator>
+    StringResponse handleGetStateInformation(http::request<Body, http::basic_fields<Allocator>>&& req) {
         if (req.find("Authorization") == req.end()) {
-            send(missingAuthHeaderToAuth(std::move(req)));
-            return;
+            return missingAuthHeaderToAuth(std::move(req));
         }
+
         auto auth_header = req["Authorization"];
         const std::string bearer_prefix = "Bearer ";
+
         if (auth_header.size() <= bearer_prefix.size() ||
             auth_header.substr(0, bearer_prefix.size()) != bearer_prefix) 
         {
-            send(invalidAuthHeaderToAuth(std::move(req)));
-            return;
+            return invalidAuthHeaderToAuth(std::move(req));
         }
         std::string token_str = std::string(auth_header.substr(bearer_prefix.size()));
         if (token_str.empty() || token_str.size() != 32) {
-            send(invalidAuthHeaderToAuth(std::move(req)));
-            return;
+            return invalidAuthHeaderToAuth(std::move(req));
         }
-            Token token{token_str};
-            auto player_ = players_.findPlayerByToken(token);
-            
-            if (!player_) {
-                send(badToken(std::move(req)));
-            } else {
+        Token token{token_str};
+        auto player_ = players_.findPlayerByToken(token);
+        if (!player_) {
+            return badToken(std::move(req));
+        } else {
             json::object players;
             json::object lost_objects;
-            for(auto dog :player_->GetSession()->GetDogs()){  
+            for(auto& dog :player_->GetSession()->GetDogs()){  
                 json::array bag_;
                 for (auto find_obj : dog->GetBagObjects()){
                     bag_.push_back(json::object{
@@ -541,7 +538,7 @@ private:
                     {"bag", bag_},
                     {"score", dog->GetScore()}
                     };
-                
+                    
             }
             for (auto& lost_obj : player_->GetSession()->GetLostObjects()){
                 lost_objects[std::to_string(*(lost_obj.get()->GetId()))] = json::object{
@@ -552,34 +549,37 @@ private:
             json::object response;
             response["players"] = players; 
             response["lostObjects"] = lost_objects; 
-            sendResponseToAuth(std::move(req), std::move(send), response); 
-            } 
+            return sendResponseToAuth(std::move(req), response); 
+        } 
     }
 
-    template <typename Body, typename Allocator, typename Send>
-    void handleGetPlayers(http::request<Body, http::basic_fields<Allocator>>&& req, Send&& send) {
+    template <typename Body, typename Allocator>
+    StringResponse handleGetPlayers(http::request<Body, http::basic_fields<Allocator>>&& req) {
+        
         if (req.find("Authorization") == req.end()) {
-            send(missingAuthHeaderToAuth(std::move(req)));
-            return;
+            return missingAuthHeaderToAuth(std::move(req));
         }
+
         auto auth_header = req["Authorization"];
         const std::string bearer_prefix = "Bearer ";
+
         if (auth_header.size() <= bearer_prefix.size() ||
-            auth_header.substr(0, bearer_prefix.size()) != bearer_prefix) 
-        {
-            send(invalidAuthHeaderToAuth(std::move(req)));
-            return;
+            auth_header.substr(0, bearer_prefix.size()) != bearer_prefix) {
+            return invalidAuthHeaderToAuth(std::move(req));
         }
+
         std::string token_str = std::string(auth_header.substr(bearer_prefix.size()));
+        
         if (token_str.empty() || token_str.size() != 32) {
-            send(invalidAuthHeaderToAuth(std::move(req)));
-            return;
+            return invalidAuthHeaderToAuth(std::move(req));
         }
-            Token token{token_str};
-            auto player_ = players_.findPlayerByToken(token);
-            if (!player_) {
-                send(badToken(std::move(req)));
-            } else {
+
+        Token token{token_str};
+        auto player_ = players_.findPlayerByToken(token);
+
+        if (!player_) {
+            return badToken(std::move(req));
+        } else {
             json::object players;
             int index = 0;
             for(auto& dog :player_->GetSession().get()->GetDogs()){
@@ -587,17 +587,16 @@ private:
                     {"name", dog.get()->GetName()}
                     };
             }
-            sendResponseToAuth(std::move(req), std::move(send), players);
-            } 
+            return sendResponseToAuth(std::move(req), players);
+        } 
     }
-    template <typename Body, typename Allocator, typename Send>
-    void handleGetMapById(http::request<Body, http::basic_fields<Allocator>>&& req, Send&& send) {
+    template <typename Body, typename Allocator>
+    StringResponse handleGetMapById(http::request<Body, http::basic_fields<Allocator>>&& req) {
         std::string target_str = std::string(req.target().substr(std::strlen("/api/v1/maps/")));
         model::Map::Id map_id{target_str};
         auto map = game_.FindMap(map_id);
         if (!map) {
-            send(mapNotFound(std::move(req)));
-            return;
+            return mapNotFound(std::move(req));
         }
         
         json::object map_json{
@@ -609,25 +608,25 @@ private:
             {"lootTypes", map->GetExtraData().loot_types_}
         };
 
-        sendResponseToAuth(std::move(req), std::move(send), map_json);
+        return sendResponseToAuth(std::move(req), map_json);
     }
 
-    template <typename Body, typename Allocator, typename Send>
-    void handleMovesTick(http::request<Body, http::basic_fields<Allocator>>&& req, Send&& send) {
+    template <typename Body, typename Allocator>
+    StringResponse handleMovesTick(http::request<Body, http::basic_fields<Allocator>>&& req) {
         json::error_code ec;
         auto json_body = json::parse(req.body(),ec);
         if (ec) {
-            send(badParse(std::move(req)));
-            return;
+            return badParse(std::move(req));
         }
         if (!json_body.as_object().contains("timeDelta") || !json_body.at("timeDelta").is_int64()) {
-            send(badTickParse(std::move(req)));
-            return; 
+            return badTickParse(std::move(req));
         }
-        auto time_delta = (json_body.at("timeDelta").as_int64());
+
+        auto time_delta = json_body.at("timeDelta").as_int64();
         Tick(time_delta);
+
         json::object response;
-        sendResponseToAuth(std::move(req), std::move(send), response);
+        return sendResponseToAuth(std::move(req), response);
     }
 
     bool IsSubPath(fs::path path, fs::path base) {
@@ -915,27 +914,18 @@ private:
         }
     }
 
-    template <typename Body, typename Allocator, typename Send, typename Json>
-    void sendResponse(http::request<Body, http::basic_fields<Allocator>>&& req, Send&& send, Json&& json_response) {
-        http::response<http::string_body> res{http::status::ok, req.version()};
-        res.set(http::field::content_type, "application/json");
-        res.keep_alive(req.keep_alive());
-        res.body() = json::serialize(json_response);
-        send(std::move(res));
-    }
-
-    template <typename Body, typename Allocator, typename Send, typename Json>
-    void sendResponseToAuth(http::request<Body, http::basic_fields<Allocator>>&& req, Send&& send, Json&& json_response) {
-        http::response<http::string_body> res{http::status::ok, req.version()};
+    template <typename Body, typename Allocator, typename Json>
+    StringResponse sendResponseToAuth(http::request<Body, http::basic_fields<Allocator>>&& req, Json&& json_response) {
+        StringResponse res{http::status::ok, req.version()};
         res.set(http::field::content_type, "application/json");
         res.set(http::field::cache_control, "no-cache");
         res.body() = json::serialize(json_response);
         res.content_length(res.body().size());
-        send(std::move(res));
+        return res;
     }
 
     template <typename Body, typename Allocator>
-    http::response<http::string_body> badTickParse(http::request<Body, http::basic_fields<Allocator>>&& req) {
+    StringResponse badTickParse(http::request<Body, http::basic_fields<Allocator>>&& req) {
         json::object error_response{
             {"code", "invalidArgument"},
             {"message", "Failed to parse tick request JSON"}};
@@ -944,7 +934,7 @@ private:
     }
 
     template <typename Body, typename Allocator>
-    http::response<http::string_body> mapNotFound(http::request<Body, http::basic_fields<Allocator>>&& req) {
+    StringResponse mapNotFound(http::request<Body, http::basic_fields<Allocator>>&& req) {
         json::object error_response{
             {"code", "mapNotFound"},
             {"message", "Map not found"}};
@@ -953,7 +943,7 @@ private:
     }
 
     template <typename Body, typename Allocator>
-    http::response<http::string_body> mapNotContainsToAuth(http::request<Body, http::basic_fields<Allocator>>&& req) {
+    StringResponse mapNotContainsToAuth(http::request<Body, http::basic_fields<Allocator>>&& req) {
         json::object error_response{
             {"code", "invalidArgument"},
             {"message", "Map not found"}};
@@ -961,7 +951,7 @@ private:
         return createErrorResponseToAuth(std::move(req), http::status::bad_request, error_response);
     }
     template <typename Body, typename Allocator>
-    http::response<http::string_body> nameNotContainsToAuth(http::request<Body, http::basic_fields<Allocator>>&& req) {
+    StringResponse nameNotContainsToAuth(http::request<Body, http::basic_fields<Allocator>>&& req) {
         json::object error_response{
             {"code", "invalidArgument"},
             {"message", "Name not found"}};
@@ -969,7 +959,7 @@ private:
         return createErrorResponseToAuth(std::move(req), http::status::bad_request, error_response);
     }
     template <typename Body, typename Allocator>
-    http::response<http::string_body> invalidMapToAuth(http::request<Body, http::basic_fields<Allocator>>&& req) {
+    StringResponse invalidMapToAuth(http::request<Body, http::basic_fields<Allocator>>&& req) {
         json::object error_response{
             {"code", "mapNotFound"},
             {"message", "Map not found"}};
@@ -977,7 +967,7 @@ private:
         return createErrorResponseToAuth(std::move(req), http::status::not_found, error_response);
     }
     template <typename Body, typename Allocator>
-    http::response<http::string_body> invalidDataToAuth(http::request<Body, http::basic_fields<Allocator>>&& req) {
+    StringResponse invalidDataToAuth(http::request<Body, http::basic_fields<Allocator>>&& req) {
         json::object error_response{
             {"code", "invalidArgument"},
             {"message", "Map not found"}};
@@ -986,7 +976,7 @@ private:
     }
 
     template <typename Body, typename Allocator>
-    http::response<http::string_body> badRequest(http::request<Body, http::basic_fields<Allocator>>&& req) {
+    StringResponse badRequest(http::request<Body, http::basic_fields<Allocator>>&& req) {
         json::object error_response{
             {"code", "badRequest"},
             {"message", "Bad request"}};
@@ -995,7 +985,7 @@ private:
     }
 
     template <typename Body, typename Allocator>
-    http::response<http::string_body> badAuth(http::request<Body, http::basic_fields<Allocator>>&& req) {
+    StringResponse badAuth(http::request<Body, http::basic_fields<Allocator>>&& req) {
         json::object error_response{
             {"code", "invalidToken"},
             {"message", "Authorization header is missing"}};
@@ -1004,7 +994,7 @@ private:
     }
 
     template <typename Body, typename Allocator>
-    http::response<http::string_body> badToken(http::request<Body, http::basic_fields<Allocator>>&& req) {
+    StringResponse badToken(http::request<Body, http::basic_fields<Allocator>>&& req) {
         json::object error_response{
             {"code", "unknownToken"},
             {"message", "Player token has not been found"}};
@@ -1013,7 +1003,7 @@ private:
     }
 
     template <typename Body, typename Allocator>
-    http::response<http::string_body> notFound(http::request<Body, http::basic_fields<Allocator>>&& req) {
+    StringResponse notFound(http::request<Body, http::basic_fields<Allocator>>&& req) {
         json::object error_response{
             {"code", "notFound"},
             {"message", "Not found"}};
@@ -1021,7 +1011,7 @@ private:
         return createErrorResponse(std::move(req), http::status::not_found, error_response);
     }
     template <typename Body, typename Allocator>
-    http::response<http::string_body> badPlayerName(http::request<Body, http::basic_fields<Allocator>>&& req) {
+    StringResponse badPlayerName(http::request<Body, http::basic_fields<Allocator>>&& req) {
         json::object error_response{
             {"code", "invalidArgument"},
             {"message", "Invalid name"}};
@@ -1029,7 +1019,7 @@ private:
         return createErrorResponseToAuth(std::move(req), http::status::bad_request, error_response);
     }
     template <typename Body, typename Allocator>
-    http::response<http::string_body> badParse(http::request<Body, http::basic_fields<Allocator>>&& req) {
+    StringResponse badParse(http::request<Body, http::basic_fields<Allocator>>&& req) {
         json::object error_response{
             {"code", "invalidArgument"},
             {"message", "Join game request parse error"}};
@@ -1037,7 +1027,7 @@ private:
         return createErrorResponseToAuth(std::move(req), http::status::bad_request, error_response);
     }
     template <typename Body, typename Allocator>
-    http::response<http::string_body> badMethodNotPost(http::request<Body, http::basic_fields<Allocator>>&& req) {
+    StringResponse badMethodNotPost(http::request<Body, http::basic_fields<Allocator>>&& req) {
         json::object error_response{
             {"code", "invalidMethod"},
             {"message", "Only POST method is expected"}};
@@ -1045,7 +1035,7 @@ private:
         return createErrorResponseToAuthToAllow(std::move(req), http::status::method_not_allowed, "POST", error_response);
     }
     template <typename Body, typename Allocator>
-    http::response<http::string_body> badMethodNotGetOrHead(http::request<Body, http::basic_fields<Allocator>>&& req) {
+    StringResponse badMethodNotGetOrHead(http::request<Body, http::basic_fields<Allocator>>&& req) {
         json::object error_response{
             {"code", "invalidMethod"},
             {"message", "Invalid method"}};
@@ -1053,7 +1043,7 @@ private:
         return createErrorResponseToAuthToAllow(std::move(req), http::status::method_not_allowed, "GET, HEAD", error_response);
     }
     template <typename Body, typename Allocator>
-    http::response<http::string_body> missingAuthHeaderToAuth(http::request<Body, http::basic_fields<Allocator>>&& req) {
+    StringResponse missingAuthHeaderToAuth(http::request<Body, http::basic_fields<Allocator>>&& req) {
         json::object error_response{
             {"code", "invalidToken"},
             {"message", "Authorization header is missing"}};
@@ -1061,7 +1051,7 @@ private:
         return createErrorResponseToAuth(std::move(req), http::status::unauthorized, error_response);
     }
     template <typename Body, typename Allocator>
-    http::response<http::string_body> invalidAuthHeaderToAuth(http::request<Body, http::basic_fields<Allocator>>&& req) {
+    StringResponse invalidAuthHeaderToAuth(http::request<Body, http::basic_fields<Allocator>>&& req) {
         json::object error_response{
             {"code", "invalidToken"},
             {"message", "Player token has not been found"}};
@@ -1069,8 +1059,8 @@ private:
         return createErrorResponseToAuth(std::move(req), http::status::unauthorized, error_response);
     }
     template <typename Body, typename Allocator, typename Json>
-    http::response<http::string_body> createErrorResponse(http::request<Body, http::basic_fields<Allocator>>&& req, http::status status, Json&& json_response) {
-        http::response<http::string_body> res{status, req.version()};
+    StringResponse createErrorResponse(http::request<Body, http::basic_fields<Allocator>>&& req, http::status status, Json&& json_response) {
+        StringResponse res{status, req.version()};
         res.set(http::field::content_type, "application/json");
         res.keep_alive(req.keep_alive());  
         res.body() = json::serialize(json_response);
@@ -1078,8 +1068,8 @@ private:
     }
 
     template <typename Body, typename Allocator, typename Json>
-    http::response<http::string_body> createErrorResponseToAuth(http::request<Body, http::basic_fields<Allocator>>&& req, http::status status, Json&& json_response) {
-        http::response<http::string_body> res{status, req.version()};
+    StringResponse createErrorResponseToAuth(http::request<Body, http::basic_fields<Allocator>>&& req, http::status status, Json&& json_response) {
+        StringResponse res{status, req.version()};
         res.set(http::field::content_type, "application/json");
         res.set(http::field::cache_control, "no-cache");
         res.keep_alive(req.keep_alive());  
@@ -1089,8 +1079,8 @@ private:
     }
 
     template <typename Body, typename Allocator, typename Json>
-    http::response<http::string_body> createErrorResponseToAuthToAllow(http::request<Body, http::basic_fields<Allocator>>&& req, http::status status, std::string allowed_type, Json&& json_response) {
-        http::response<http::string_body> res{status, req.version()};
+    StringResponse createErrorResponseToAuthToAllow(http::request<Body, http::basic_fields<Allocator>>&& req, http::status status, std::string allowed_type, Json&& json_response) {
+        StringResponse res{status, req.version()};
         res.set(http::field::content_type, "application/json");
         res.set(http::field::cache_control, "no-cache");
         res.set(http::field::allow, allowed_type);

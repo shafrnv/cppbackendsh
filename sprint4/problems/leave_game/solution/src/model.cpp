@@ -114,7 +114,7 @@ Players::PlayerPointer Players::AddPlayer(std::string dog_name, std::shared_ptr<
         std::uniform_int_distribution<> dis(0, static_cast<int>(roads_count - 1));
         const  Road& road = session.get()->GetMap().GetRoads()[dis(gen)];
         auto dog = session.get()->AddDog(dog_name, road, model::Speed(0,0));
-        auto player_ =std::make_shared<Player>(session, dog, token);
+        auto player_ = std::make_shared<Player>(session, dog, token);
         players_.emplace_back(std::move(player_));
     } else {
         const  Road& road = session.get()->GetMap().GetRoads()[0];
@@ -126,21 +126,23 @@ Players::PlayerPointer Players::AddPlayer(std::string dog_name, std::shared_ptr<
 } 
 
 Players::PlayerPointer Players::findPlayerByToken(Token& token) {
-    for (PlayerPointer& player : players_) {
-         if (player.get()->GetToken() == token) {
-             return player;
-         }
-    }   
-    return nullptr;
+    auto it = std::find_if(players_.begin(), players_.end(),
+        [&token](const PlayerPointer& player) {
+            return player->GetToken() == token;
+        }
+    );
+    
+    return (it != players_.end()) ? *it : nullptr;
 }
 
 Players::PlayerPointer Players::FindPlayerByDog(Dog::Id dog_id) {
-    for (PlayerPointer& player : players_){
-        if (player->GetDog()->GetId() == dog_id){
-            return player;
+    auto it = std::find_if(players_.begin(), players_.end(),
+        [&dog_id](const PlayerPointer& player) {
+            return player->GetDog()->GetId() == dog_id;
         }
-    }
-    return nullptr;
+    );
+
+    return (it != players_.end()) ? *it : nullptr;
 }
 
 }  // namespace model

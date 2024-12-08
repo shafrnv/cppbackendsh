@@ -344,8 +344,8 @@ public:
     }
 
     void AddBagObject(const BagPointer& lost_object) noexcept {
+        score_ += lost_object.get()->GetValue();
         bag_.emplace_back(std::move(lost_object));
-        score_+= lost_object.get()->GetValue();
     }
 
     void DeleteBagObjects() noexcept {

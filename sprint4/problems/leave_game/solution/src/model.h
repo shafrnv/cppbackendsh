@@ -585,9 +585,20 @@ public:
         players_.push_back(std::make_shared<Player>(player));
     }
 
-    void DeletePlayer(const PlayerPointer& player_) noexcept{
-        players_.erase(std::find_if(players_.begin(), players_.end(),
-        [&](const PlayerPointer& player) {return player->GetToken() == player_->GetToken(); }));
+    void DeletePlayer(const PlayerPointer& player_, GameSession::Dogs& other_dogs_in_ses) noexcept{
+        auto it = std::find(players_.begin(), players_.end(),player_);
+            //[&](const PlayerPointer& player) { return player == player_; });
+        if (it!= players_.end()) {
+            auto dogIt = std::find(other_dogs_in_ses.begin(), other_dogs_in_ses.end(),player_->GetDog());
+           // [&](const GameSession::DogPointer& dog) {player_->GetDog()->GetId() == dog->GetId(); });
+
+            if (dogIt != other_dogs_in_ses.end()){
+                std::cout << "Dog Id" << (*dogIt)->GetName() << std::endl;
+                other_dogs_in_ses.erase(dogIt);
+            }   
+            std::cout << "Token player" << *(*it)->GetToken() << std::endl;
+            players_.erase(it); 
+        }
     }
 
     Players_& GetPlayers() noexcept {

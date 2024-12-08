@@ -170,8 +170,7 @@ public:
                         std::cerr << "Не удалось добавить запись об игроке в базу данных: " << e.what() << std::endl;
                     }
                     std::cout << *(dog->GetId()) << std::endl;
-                    players_.DeletePlayer(players_.FindPlayerByDog(dog->GetId()));
-                    session->DeleteDog(dog);
+                    players_.DeletePlayer(players_.FindPlayerByDog(dog->GetId()), session->GetDogs());
                 } else {
                     collision_detector::Gatherer gatherer_;
                     gatherer_.start_pos = dog->GetCoordinate();
@@ -286,7 +285,7 @@ private:
             }
         }
 
-        std::vector<PlayerRecord> records = dbManager.GetPlayerRecords(start, maxItems);
+        std::vector<PlayerRecord> records = dbManager_.GetPlayerRecords(start, maxItems);
 
         json::array jsonRecords;
         for (const auto& record : records) {
@@ -584,9 +583,8 @@ private:
             return badToken(std::move(req));
         } else {
             json::object players;
-            int index = 0;
             for(auto& dog :player_->GetSession().get()->GetDogs()){
-                players[std::to_string(index++)] = json::object{
+                players[std::to_string(*dog->GetId())] = json::object{
                     {"name", dog.get()->GetName()}
                     };
             }

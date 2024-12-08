@@ -69,7 +69,6 @@ private:
         using namespace std::literals;
         // Очищаем запрос от прежнего значения (метод Read может быть вызван несколько раз)
         request_ = {};
-        stream_.expires_after(100s);
         // Считываем request_ из stream_, используя buffer_ для хранения считанных данных
         http::async_read(stream_, buffer_, request_,
                          // По окончании операции будет вызван метод OnRead

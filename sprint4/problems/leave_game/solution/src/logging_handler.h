@@ -58,9 +58,8 @@ class LoggingRequestHandler {
     }
 
 public:
-    explicit LoggingRequestHandler(MainRequestHandler &handler) : decorated_(handler) {}
-    LoggingRequestHandler(const MainRequestHandler &) = delete;
-    LoggingRequestHandler &operator=(const MainRequestHandler &) = delete;
+    explicit LoggingRequestHandler(std::shared_ptr<MainRequestHandler> handler) noexcept
+				    : decorated_(std::move(handler)) {}
 
     template <typename Body, typename Allocator, typename Send>
     void operator()(http::request<Body, http::basic_fields<Allocator>> &&req, Send &&send,
@@ -71,24 +70,18 @@ public:
         LogRequest(req, client_address);
 
         ptime start_time = microsec_clock::universal_time();
-        std::variant<StringResponse, FileResponse> answer = decorated_(std::move(req));
-        time_duration duration = microsec_clock::universal_time() - start_time;
-
-        if (std::holds_alternative<StringResponse>(answer)) {
-            StringResponse response(std::move(std::get<StringResponse>(answer)));
-            LogResponse(client_address, static_cast<int>(duration.total_milliseconds()),
-                        response.result_int(), response[http::field::content_type]);
-            send(std::move(response));
-        } else if (std::holds_alternative<FileResponse>(answer)) {
-            http::response<http::file_body> response(std::move(std::get<FileResponse>(answer)));
-            LogResponse(client_address, static_cast<int>(duration.total_milliseconds()),
-                        response.result_int(), response[http::field::content_type]);
-            send(std::move(response));
-        }
+        
+        (*decorated_)(std::forward<decltype(req)>(req),
+                   std::forward<decltype(send)>(send),
+                   [start_time, client_address](const unsigned int response_code, const std::string content_type) {
+                    time_duration duration = microsec_clock::universal_time() - start_time;
+                    LogResponse(client_address, static_cast<int>(duration.total_milliseconds()),
+                                    response_code, content_type);
+                   });
     }
 
 private:
-    MainRequestHandler &decorated_;
+    std::shared_ptr<MainRequestHandler> decorated_;
 };
 
 } // namespace logging_handler

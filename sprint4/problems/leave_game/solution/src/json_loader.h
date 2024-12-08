@@ -22,7 +22,7 @@ std::string GetLogRequest(const std::string timestamp,
                             const std::string uri,
                             const std::string http_method);
 std::string GetLogResponse(const std::string timestamp,
-                            const std::string client_address,
+                                const std::string client_address,
                             const int response_time_msec,
                             const int response_code,
                             const std::string content_type);

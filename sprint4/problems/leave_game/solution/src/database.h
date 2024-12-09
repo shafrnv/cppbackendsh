@@ -50,9 +50,9 @@ public:
                 ");"
             );
 
-            std::cout << "Таблица 'retired_players' была создана." << std::endl;
+            //std::cout << "Таблица 'retired_players' была создана." << std::endl;
         } else {
-            std::cout << "Таблица 'retired_players' уже существует." << std::endl;
+            //std::cout << "Таблица 'retired_players' уже существует." << std::endl;
         }
         txn.commit();
     }

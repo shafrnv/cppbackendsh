@@ -247,15 +247,13 @@ int main(int argc, const char* argv[]) {
         constexpr net::ip::port_type port = 8080;
         http_server::ServeHttp(ioc, {address, port}, logger_handler);
         
-        // Эта надпись сообщает тестам о том, что сервер запущен и готов обрабатывать запросы
-        std::cout << "Server has started..."sv << std::endl;
 
         // 6. Запускаем обработку асинхронных операций
         RunWorkers(std::max(1u, num_threads), [&ioc] {
             ioc.run();
         });
 
-        //logging_handler::LogStopServer(EXIT_SUCCESS, "");
+        logging_handler::LogStopServer(EXIT_SUCCESS, "");
         if (options->have_serizalize){
             handler->SaveStateInformation();
         }
@@ -263,5 +261,4 @@ int main(int argc, const char* argv[]) {
         logging_handler::LogStopServer(EXIT_FAILURE, ex.what());
         return EXIT_FAILURE;
     }
-    //return EXIT_SUCCESS;
 }

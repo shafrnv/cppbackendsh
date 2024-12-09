@@ -27,7 +27,7 @@ FROM ubuntu:22.04 as run
 # Создадим пользователя www
 RUN groupadd -r www && useradd -r -g www www
 USER www
-ENV GAME_DB_URL=postgres://postgres:Mys3Cr3t@172.17.0.2:5432/records
+ENV GAME_DB_URL=postgres://postgres:Mys3Cr3t@localhost:5432/records
 
 # Скопируем приложение со сборочного контейнера в директорию /app.
 # Не забываем также папку data, она пригодится. 

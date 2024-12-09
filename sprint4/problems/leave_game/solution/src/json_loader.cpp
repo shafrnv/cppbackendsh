@@ -118,93 +118,89 @@ model::Game LoadGame(const std::filesystem::path& json_path) {
     return game;
 }
 
-std::string GetLogServerStart(const std::string timestamp,
-                              const std::string srv_address,
-                              const int port) {
-    boost::json::object res_obj;
-    res_obj["timestamp"] = timestamp;
+std::string GetLogServerStart(std::string_view timestamp,
+                              std::string_view srv_address,
+                              int port) {
+    boost::json::object res_obj = {
+        {"timestamp", timestamp},
+        {"data", {
+            {"port", port},
+            {"address", srv_address}
+        }},
+        {"message", "server started"}
+    };
 
-    boost::json::object data_obj;
-    data_obj["port"] = port;
-    data_obj["address"] = srv_address;
-
-    res_obj["data"] = data_obj;
-    res_obj["message"] = "server started";
-    boost::json::value val_json(res_obj);
-    return {boost::json::serialize(val_json)};
+    return boost::json::serialize(res_obj);
 }
 
-std::string GetLogServerStop(const std::string timestamp,
-                             const int return_code,
-                             const std::string exception_what) {
-    boost::json::object res_obj;
-    res_obj["timestamp"] = timestamp;
+std::string GetLogServerStop(std::string_view timestamp,
+                             int return_code,
+                             std::string_view exception_what) {
 
-    boost::json::object data_obj;
-    data_obj["code"] = return_code;
-    if (!exception_what.empty()) {
-        data_obj["exception"] = exception_what;
-    }
+    boost::json::object res_obj = {
+        {"timestamp", timestamp},
+        {"data", {
+            {"code", return_code},
+            {"exception", exception_what.empty() ? nullptr : boost::json::value_from(exception_what)}
+        }},
+        {"message", "server exited"}
+    };
 
-    res_obj["data"] = data_obj;
-    res_obj["message"] = "server exited";
-    boost::json::value val_json(res_obj);
-    return {boost::json::serialize(val_json)};
+    return boost::json::serialize(res_obj);
 }
-std::string GetLogRequest(const std::string timestamp,
-                          const std::string client_address,
-                          const std::string uri,
-                          const std::string http_method) {
-    boost::json::object res_obj;
-    res_obj["timestamp"] = timestamp;
+std::string GetLogRequest(std::string_view timestamp,
+                          std::string_view client_address,
+                          std::string_view uri,
+                          std::string_view http_method) {
 
-    boost::json::object data_obj;
-    data_obj["ip"] = client_address;
-    data_obj["URI"] = uri;
-    data_obj["method"] = http_method;
+    boost::json::object res_obj = {
+        {"timestamp", timestamp},
+        {"data", {
+            {"ip", client_address},
+            {"URI", uri},
+            {"method", http_method}
+        }},
+        {"message", "request received"}
+    };
 
-    res_obj["data"] = data_obj;
-    res_obj["message"] = "request received";
-    boost::json::value val_json(res_obj);
-    return {boost::json::serialize(val_json)};
+    return boost::json::serialize(res_obj);
 }
 
-std::string GetLogResponse(const std::string timestamp,
-                           const std::string client_address,
-                           const int response_time_msec,
-                           const int response_code,
-                           const std::string content_type) {
-    boost::json::object res_obj;
-    res_obj["timestamp"] = timestamp;
+std::string GetLogResponse(std::string_view timestamp,
+                           std::string_view client_address,
+                           int response_time_msec,
+                           int response_code,
+                           std::string_view content_type) {
+    
+    boost::json::object res_obj = {
+        {"timestamp", timestamp},
+        {"data", {
+            {"ip", client_address},
+            {"response_time", response_time_msec},
+            {"code", response_code},
+            {"content_type", content_type}
+        }},
+        {"message", "response sent"}
+    };
 
-    boost::json::object data_obj;
-    data_obj["ip"] = client_address;
-    data_obj["response_time"] = response_time_msec;
-    data_obj["code"] = response_code;
-    data_obj["content_type"] = content_type;
-
-    res_obj["data"] = data_obj;
-    res_obj["message"] = "response sent";
-    boost::json::value val_json(res_obj);
-    return {boost::json::serialize(val_json)};
+    return boost::json::serialize(res_obj);
 }
 
-std::string GetLogError(const std::string timestamp,
-                        const int error_code,
-                        const std::string error_text,
-                        const std::string where) {
-    boost::json::object res_obj;
-    res_obj["timestamp"] = timestamp;
+std::string GetLogError(std::string_view timestamp,
+                        int error_code,
+                        std::string_view error_text,
+                        std::string_view where) {
+    boost::json::object res_obj = {
+        {"timestamp", timestamp},
+        {"data", {
+            {"code", error_code},
+            {"text", error_text},
+            {"where", where}
+        }},
+        {"message", "error"}
+    };
 
-    boost::json::object data_obj;
-    data_obj["code"] = error_code;
-    data_obj["text"] = error_text;
-    data_obj["where"] = where;
-
-    res_obj["data"] = data_obj;
-    res_obj["message"] = "error";
-    boost::json::value val_json(res_obj);
-    return {boost::json::serialize(val_json)};
+    return boost::json::serialize(res_obj);
 }
 
 }  // namespace json_loader

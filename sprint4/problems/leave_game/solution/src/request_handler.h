@@ -2,6 +2,8 @@
 #include "model.h"
 #include "loot_generator.h"
 #include "model_serialization.h"
+#include "database.h"
+
 #include <filesystem>
 #include <cassert>
 #include <iostream>
@@ -32,18 +34,15 @@ using InputArchive = boost::archive::text_iarchive;
 using OutputArchive = boost::archive::text_oarchive;
 using QueryParams = std::unordered_map<std::string, std::string>;
 
-// Запрос, тело которого представлено в виде строки
 using StringRequest = http::request<http::string_body>;
-// Ответ, тело которого представлено в виде строки
 using StringResponse = http::response<http::string_body>;
-// Ответ, тело которого представлено в виде файла
 using FileResponse = http::response<http::file_body>;
 
-class RequestHandler {
+class RequestHandler :  public std::enable_shared_from_this<RequestHandler> {
 public:
     explicit RequestHandler(model::Game& game, loot_gen::LootGenerator& loot_gen, std::string path_static, 
                             bool random_spawn, std::chrono::milliseconds save_interval, fs::path& serialization_file_path,
-                            bool have_state_period , boost::asio::strand<boost::asio::io_context::executor_type>& strand)
+                            bool have_state_period , DatabaseManager& dbManager, boost::asio::strand<boost::asio::io_context::executor_type>& strand)
         : game_{game},
         loot_gen_{loot_gen},
         path_{path_static},
@@ -52,66 +51,98 @@ public:
         have_state_period_{have_state_period},
         time_since_last_save_{0},
         serialization_file_path_{serialization_file_path},
+        dbManager_{dbManager},
         strand_{strand} {}
 
     RequestHandler(const RequestHandler&) = delete;
     RequestHandler& operator=(const RequestHandler&) = delete;
 
-    template <typename Body, typename Allocator>
-    std::variant<StringResponse, FileResponse> operator()(http::request<Body, http::basic_fields<Allocator>>&& req) {
+    template <typename Body, typename Allocator, typename Send, typename LogFunc>
+    void operator()(http::request<Body, http::basic_fields<Allocator>>&& req, 
+                    Send &&send, LogFunc&& log_function) {
+        const std::string api_base_str = "/api/";
         try {
-            if (req.method() == http::verb::get && req.target() == "/api/v1/maps") {
-                return handleGetMaps(std::move(req));
-            } else if (req.target().starts_with("/api/v1/maps/")) {
-                if (req.method() == http::verb::get || req.method() == http::verb::head) {
-                    return handleGetMapById(std::move(req));
-                } else{
-                    return badMethodNotGetOrHead(std::move(req));
+            if (req.target().starts_with("/api/")) {
+                // REST API call
+                boost::asio::dispatch(strand_, [this, req = std::move(req), send = std::move(send), log_function = std::move(log_function)]() mutable {
+                    try {
+                        StringResponse answer = ReturnApiResponse(std::move(req));
+                        log_function(answer.result_int(), std::string(answer[http::field::content_type]));
+                        send(std::move(answer));
+                    } catch (...) {
+                        StringResponse answer = badRequest(std::move(req));
+                        log_function(answer.result_int(), std::string(answer[http::field::content_type]));
+                        send(std::move(answer));
+                    }
+                });
+            } else {
+                auto answer = handleRequest(std::move(req));
+                 if (std::holds_alternative<StringResponse>(answer)) {
+                    StringResponse response(std::move(std::get<StringResponse>(answer)));
+                    log_function(response.result_int(), std::string(response[http::field::content_type]));
+                    send(std::move(response));
+                } else if (std::holds_alternative<FileResponse>(answer)) {
+                    FileResponse response(std::move(std::get<FileResponse>(answer)));
+                    log_function(response.result_int(), std::string(response[http::field::content_type]));
+                    send(std::move(response));
                 }
-            } else if (req.target() == "/api/v1/game/join") {
-                if (req.method() == http::verb::post){
-                    return handleJoinGame(std::move(req));
-                } else {
-                    return badMethodNotPost(std::move(req));
-                }
-            } else if (req.target() == "/api/v1/game/players") {
-                if (req.method() == http::verb::get || req.method() == http::verb::head) {
-                    return handleGetPlayers(std::move(req));
-                } else{
-                    return badMethodNotGetOrHead(std::move(req));
-                }
-            }else if (req.target() == "/api/v1/game/state") {
-                if (req.method() == http::verb::get || req.method() == http::verb::head) {
-                    return handleGetStateInformation(std::move(req));
-                } else{
-                    return badMethodNotGetOrHead(std::move(req));
-                }
-            }else if (req.target() == "/api/v1/game/player/action") {
-                if (req.method() == http::verb::post){
-                    return handleAction(std::move(req));
-                } else {
-                    return badMethodNotPost(std::move(req));
-                }
-            } else if (req.target() == "/api/v1/game/tick") {
-                if (req.method() == http::verb::post) {
-                    return handleMovesTick(std::move(req));
-                } else {
-                    return badMethodNotPost(std::move(req));
-                }
-            } else if (req.target() == "/api/v1/game/records"){
-                if (req.method() == http::verb::get || req.method() == http::verb::head) {
-                    return handleGetRecords(std::move(req));
-                } else{
-                    return badMethodNotGetOrHead(std::move(req));
-                }
-            }else if (req.target().starts_with("/api/")) {
-                return badRequest(std::move(req));
-            } else {    
-                return handleRequest(std::forward<StringRequest>(req));
             }
-        } catch (std::exception& e) {
-            std::cerr << "Error handling request: " << e.what() << std::endl;
-        }        
+        } catch (...) {
+            StringResponse answer = badRequest(std::move(req));
+            log_function(answer.result_int(), std::string(answer[http::field::content_type]));
+            send(std::move(answer));
+        }
+    }
+
+    template <typename Body, typename Allocator>
+    StringResponse ReturnApiResponse(http::request<Body, http::basic_fields<Allocator>>&& req) {  
+        if (req.method() == http::verb::get && req.target() == "/api/v1/maps") {
+            return handleGetMaps(std::move(req));
+        } else if (req.target().starts_with("/api/v1/maps/")) {
+            if (req.method() == http::verb::get || req.method() == http::verb::head) {
+                return handleGetMapById(std::move(req));
+            } else{
+                return badMethodNotGetOrHead(std::move(req));
+            }
+        } else if (req.target() == "/api/v1/game/join") {
+            if (req.method() == http::verb::post){
+                return handleJoinGame(std::move(req));
+            } else {
+                return badMethodNotPost(std::move(req));
+            }
+        } else if (req.target() == "/api/v1/game/players") {
+            if (req.method() == http::verb::get || req.method() == http::verb::head) {
+                return handleGetPlayers(std::move(req));
+            } else{
+                return badMethodNotGetOrHead(std::move(req));
+            }
+        }else if (req.target() == "/api/v1/game/state") {
+            if (req.method() == http::verb::get || req.method() == http::verb::head) {
+                return handleGetStateInformation(std::move(req));
+            } else{
+                return badMethodNotGetOrHead(std::move(req));
+            }
+        }else if (req.target() == "/api/v1/game/player/action") {
+            if (req.method() == http::verb::post){
+                return handleAction(std::move(req));
+            } else {
+                return badMethodNotPost(std::move(req));
+            }
+        } else if (req.target() == "/api/v1/game/tick") {
+            if (req.method() == http::verb::post) {
+                return handleMovesTick(std::move(req));
+            } else {
+                return badMethodNotPost(std::move(req));
+            }
+        } else if (req.target().starts_with("/api/v1/game/records")) {
+            if (req.method() == http::verb::get || req.method() == http::verb::head) {
+                return handleGetRecords(std::move(req));
+            } else{
+                return badMethodNotGetOrHead(std::move(req));
+            }
+        }else if (req.target().starts_with("/api/")) {
+            return badRequest(std::move(req));
+        } 
     }
 
     void Tick(int delta){
@@ -120,51 +151,25 @@ public:
         std::vector<collision_detector::Gatherer> gatherers_;
         
         for (auto& session : game_.GetGameSessions()) {
-            session->AddSessionTime(delta * 0.001);
-            cout << session->GetSessionTime() << endl;
             for (auto it = session->GetDogs().begin(); it < session->GetDogs().end(); ++it) {
                 auto& dog = *it;
-                std::cout << *(dog->GetId()) << std::endl;
-                cout << dog->GetRetirementTime() << endl;
+                dog->AddInGameTime(delta * 0.001);
                 if (dog->GetRetirementTime() >= game_.GetDogRetirementTime()){
                     const char* db_url = std::getenv("GAME_DB_URL");
-                    //postgres://postgres:Mys3Cr3t@localhost:30432/records
                     try {
-                        // Создаем новое подключение к базе данных
-                        pqxx::connection conn(db_url);
-
-                        // Начинаем транзакцию
-                        pqxx::work txn(conn);
-
-                        // Генерируем UUID
-                        boost::uuids::uuid id = boost::uuids::random_generator()();
-                        std::string id_str = boost::uuids::to_string(id);
-
-                        // Получаем данные игрока
                         std::string name = dog->GetName();
                         int score = dog->GetScore();
-                        double play_time_ms = session->GetSessionTime() - dog->GetTimeInGame();
-                        cout << play_time_ms << " " << session->GetSessionTime() << " " << dog->GetTimeInGame() << endl;
-                        // Вставляем данные в таблицу
-                        txn.exec_params(
-                            "INSERT INTO retired_players (id, name, score, play_time_ms) "
-                            "VALUES ($1::UUID, $2, $3, $4)",
-                            id_str, name, score, play_time_ms
-                        );
+                        double play_time_ms = round(dog->GetTimeInGame()*1000)/1000;
 
-                        txn.commit();
+                        dbManager_.AddPlayerRecord(name, score, play_time_ms);
                     } catch (const std::exception& e) {
                         std::cerr << "Не удалось добавить запись об игроке в базу данных: " << e.what() << std::endl;
                     }
-                    std::cout << *(dog->GetId()) << std::endl;
-                    players_.DeletePlayer(players_.FindPlayerByDog(dog->GetId()));
-                    session->DeleteDog(dog);
+                    players_.DeletePlayer(players_.FindPlayerByDog(dog->GetId()), session->GetDogs());
                 } else {
                     collision_detector::Gatherer gatherer_;
                     gatherer_.start_pos = dog->GetCoordinate();
                     gatherer_.width = 0.3;
-                    
-                    dog->AddInGameTime(delta * 0.001);
                     if (dog->GetSpeed().vx==0 && dog->GetSpeed().vy==0){
                         dog->AddRetirementTime(delta * 0.001);
                     }else {
@@ -201,6 +206,7 @@ public:
                 }else{
                     model::LostObject::Id object_id{event.item_id};
                     model::Dog::Id dog_id{event.gatherer_id};
+                    std::cout << "ITemid: " << *object_id << "dog: " << *dog_id << std::endl;
                     if (session->GetMap().GetBagCapacity() > session->FindDog(dog_id)->GetBagObjects().size()){
                         session->FindDog(dog_id)->AddBagObject(session->GetLostObjects()[event.item_id]);
                         session->DeleteLostObjects(event.item_id);
@@ -271,30 +277,18 @@ private:
                return badRequest(std::move(req));
             }
         }
-        const char* db_url = std::getenv("GAME_DB_URL");
 
+        std::vector<PlayerRecord> records = dbManager_.GetPlayerRecords(start, maxItems);
 
-        pqxx::connection conn(db_url);
-        pqxx::work txn(conn);
-
-        pqxx::result r = txn.exec_params(
-            "SELECT name, score, play_time_ms "
-            "FROM retired_players "
-            "ORDER BY score DESC, play_time_ms ASC, name ASC "
-            "LIMIT $1 OFFSET $2",
-            maxItems, start
-        );
-
-        // Формируем JSON-ответ
-        json::array records;
-        for (const auto& row : r) {
-            records.push_back(json::object{
-                {"name", row["name"].as<std::string>()},
-                {"score", row["score"].as<int>()},
-                {"playTime", row["play_time_ms"].as<double>()}
+        json::array jsonRecords;
+        for (const auto& record : records) {
+            jsonRecords.push_back(json::object{
+                {"name", record.name},
+                {"score", record.score},
+                {"playTime", record.playTime}
             });
         }
-        return sendResponseToAuth(std::move(req), records);
+        return sendResponseToAuth(std::move(req), jsonRecords);
     }
  
     template <typename Body, typename Allocator>
@@ -305,7 +299,7 @@ private:
         
         auto target = req.target();
         std::string decoded_url = url_decode(std::string(target.data(), target.size()));
-        // Находим позицию '?'
+
         std::size_t pos = decoded_url.find('?');
 
         if (pos != std::string::npos && pos + 1 < decoded_url.size()) {
@@ -396,7 +390,8 @@ private:
         return sendResponseToAuth(std::move(req), player_json);
     }
     
-    std::variant<StringResponse, FileResponse> handleRequest(StringRequest &&req) {
+    template <typename Body, typename Allocator>
+    std::variant<StringResponse, FileResponse> handleRequest(http::request<Body, http::basic_fields<Allocator>>&& req) {
         auto target = req.target();
         std::string requested_path_in_str;
         if (target == "/") {
@@ -476,16 +471,16 @@ private:
             }
 
             std::string move_key = std::string(json_body.at("move").as_string());
-            if (move_key=="L") {
+            if (move_key == "L") {
                 player_->GetDog().get()->SetDirection(model::Direction::WEST);
                 player_->GetDog().get()->SetSpeed(model::Speed(-(player_->GetSession().get()->GetMap().GetSpeed().vx),0));
-            } else if (move_key=="R") {
+            } else if (move_key == "R") {
                 player_->GetDog().get()->SetDirection(model::Direction::EAST);
                 player_->GetDog().get()->SetSpeed(model::Speed(player_->GetSession().get()->GetMap().GetSpeed().vx, 0));
-            } else if (move_key=="U") {
+            } else if (move_key == "U") {
                 player_->GetDog().get()->SetDirection(model::Direction::NORTH);
                 player_->GetDog().get()->SetSpeed(model::Speed(0,-(player_->GetSession().get()->GetMap().GetSpeed().vy)));
-            } else if (move_key=="D") {
+            } else if (move_key == "D") {
                 player_->GetDog().get()->SetDirection(model::Direction::SOUTH);
                 player_->GetDog().get()->SetSpeed(model::Speed(0,player_->GetSession().get()->GetMap().GetSpeed().vy));
             } else if (move_key.empty()){
@@ -581,9 +576,8 @@ private:
             return badToken(std::move(req));
         } else {
             json::object players;
-            int index = 0;
             for(auto& dog :player_->GetSession().get()->GetDogs()){
-                players[std::to_string(index++)] = json::object{
+                players[std::to_string(*dog->GetId())] = json::object{
                     {"name", dog.get()->GetName()}
                     };
             }
@@ -1108,6 +1102,7 @@ private:
 
     model::Players players_;
     model::Game& game_;
+    DatabaseManager& dbManager_;
     fs::path serialization_file_path_;
     std::string path_;
     bool random_spawn_;

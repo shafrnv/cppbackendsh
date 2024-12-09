@@ -361,7 +361,7 @@ public:
     }
 
     void AddInGameTime(const double& ses_time) noexcept {
-        session_in_time = ses_time;
+        session_in_time +=ses_time;
     }
 
     const BagObjects& GetBagObjects() const noexcept {
@@ -464,10 +464,6 @@ public:
         return spawned_objects_size_;
     }
 
-    const double& GetSessionTime() const noexcept {
-        return session_time_;
-    }
-
     DogPointer AddDog(std::string name, const Road& road, const Speed& dog_speed_initial);
 
     const LostObjects& GetLostObjects() const noexcept {
@@ -507,9 +503,6 @@ public:
         current_map_ = map;
     }
 
-    void AddSessionTime(const double& time) {
-        session_time_ += time;
-    }
     LostObjectPointer FindLostObject(const LostObject::Id& id) noexcept {
         if (auto it = lost_object_id_to_index_.find(id); it != lost_object_id_to_index_.end()) {
             return lost_objects_.at(it->second);
@@ -542,7 +535,6 @@ private:
     LostObjects lost_objects_;
     LostObjectIdToIndex lost_object_id_to_index_;
     size_t spawned_objects_size_ = 0;
-    double session_time_ = 0;
 };
 
 

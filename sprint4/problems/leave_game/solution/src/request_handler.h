@@ -134,7 +134,7 @@ public:
             } else {
                 return badMethodNotPost(std::move(req));
             }
-        } else if (req.target() == "/api/v1/game/records"){
+        } else if (req.target().starts_with("/api/v1/game/records")) {
             if (req.method() == http::verb::get || req.method() == http::verb::head) {
                 return handleGetRecords(std::move(req));
             } else{
@@ -151,32 +151,25 @@ public:
         std::vector<collision_detector::Gatherer> gatherers_;
         
         for (auto& session : game_.GetGameSessions()) {
-            session->AddSessionTime(delta * 0.001);
-            cout << session->GetSessionTime() << endl;
             for (auto it = session->GetDogs().begin(); it < session->GetDogs().end(); ++it) {
                 auto& dog = *it;
-                std::cout << *(dog->GetId()) << std::endl;
-                cout << dog->GetRetirementTime() << endl;
+                dog->AddInGameTime(delta * 0.001);
                 if (dog->GetRetirementTime() >= game_.GetDogRetirementTime()){
                     const char* db_url = std::getenv("GAME_DB_URL");
-                    //postgres://postgres:Mys3Cr3t@localhost:30432/records
                     try {
                         std::string name = dog->GetName();
                         int score = dog->GetScore();
-                        double play_time_ms = session->GetSessionTime() - dog->GetTimeInGame();
+                        double play_time_ms = round(dog->GetTimeInGame()*1000)/1000;
 
                         dbManager_.AddPlayerRecord(name, score, play_time_ms);
                     } catch (const std::exception& e) {
                         std::cerr << "Не удалось добавить запись об игроке в базу данных: " << e.what() << std::endl;
                     }
-                    std::cout << *(dog->GetId()) << std::endl;
                     players_.DeletePlayer(players_.FindPlayerByDog(dog->GetId()), session->GetDogs());
                 } else {
                     collision_detector::Gatherer gatherer_;
                     gatherer_.start_pos = dog->GetCoordinate();
                     gatherer_.width = 0.3;
-                    
-                    dog->AddInGameTime(delta * 0.001);
                     if (dog->GetSpeed().vx==0 && dog->GetSpeed().vy==0){
                         dog->AddRetirementTime(delta * 0.001);
                     }else {

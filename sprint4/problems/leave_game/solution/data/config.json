@@ -1,6 +1,5 @@
 {
   "defaultDogSpeed": 3.0,
-  "defaultBagCapacity": 3,
   "lootGeneratorConfig": {
     "period": 5.0,
     "probability": 0.5

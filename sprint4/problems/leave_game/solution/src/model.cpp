@@ -66,22 +66,21 @@ GameSession::DogPointer GameSession::AddDog(std::string name, const Road& road, 
     model::Dog::Id dog_id{ static_cast<int>(index)};
     geom::Point2D random_coordinate ={0,0};
 
-    std::random_device rd;
-    std::mt19937 gen(rd());
+    // std::random_device rd;
+    // std::mt19937 gen(rd());
 
-    if (road.IsHorizontal()) {
-        std::uniform_real_distribution<> dis_x(road.GetStart().x, road.GetEnd().x);
-        random_coordinate.x = dis_x(gen);
-        random_coordinate.y = road.GetStart().y; 
-    } else if (road.IsVertical()) {
-        std::uniform_real_distribution<> dis_y(road.GetStart().y, road.GetEnd().y);
-        random_coordinate.y = dis_y(gen);
-        random_coordinate.x = road.GetStart().x;
-    }
+    // if (road.IsHorizontal()) {
+    //     std::uniform_real_distribution<> dis_x(road.GetStart().x, road.GetEnd().x);
+    //     random_coordinate.x = dis_x(gen);
+    //     random_coordinate.y = road.GetStart().y; 
+    // } else if (road.IsVertical()) {
+    //     std::uniform_real_distribution<> dis_y(road.GetStart().y, road.GetEnd().y);
+    //     random_coordinate.y = dis_y(gen);
+    //     random_coordinate.x = road.GetStart().x;
+    // }
 
     Direction initial_direction = Direction::NORTH;
     auto dog = std::make_shared<Dog>(dog_id, name,random_coordinate, dog_speed_initial, initial_direction);
-    dog->AddInGameTime(session_time_);
     if (auto [it, inserted] = dog_id_to_index_.emplace(dog.get()->GetId(), index); !inserted) {
         throw std::invalid_argument("Dog with id "s + std::to_string(*dog.get()->GetId()) + " already exists"s);
      } else {

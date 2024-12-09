@@ -234,6 +234,13 @@ int main(int argc, const char* argv[]) {
             handler->LoadStateInformation(input_archive);
         }
 
+        
+        logging_handler::LoggingRequestHandler logger_handler(handler);
+        // 5. Запустить обработчик HTTP-запросов, делегируя их обработчику запросов
+        const auto address = net::ip::make_address("0.0.0.0");
+        constexpr net::ip::port_type port = 8080;
+        http_server::ServeHttp(ioc, {address, port}, logger_handler);
+        
         std::chrono::milliseconds delta_ms = options->tick_period;
         if (options->have_tick_period){
             auto ticker = std::make_shared<Ticker>(strand, delta_ms,
@@ -241,12 +248,6 @@ int main(int argc, const char* argv[]) {
             );
             ticker->Start();
         }
-        logging_handler::LoggingRequestHandler logger_handler(handler);
-        // 5. Запустить обработчик HTTP-запросов, делегируя их обработчику запросов
-        const auto address = net::ip::make_address("0.0.0.0");
-        constexpr net::ip::port_type port = 8080;
-        http_server::ServeHttp(ioc, {address, port}, logger_handler);
-        
 
         // 6. Запускаем обработку асинхронных операций
         RunWorkers(std::max(1u, num_threads), [&ioc] {

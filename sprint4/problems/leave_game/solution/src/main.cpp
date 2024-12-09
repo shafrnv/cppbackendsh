@@ -18,6 +18,7 @@ using namespace std::literals;
 namespace net = boost::asio;
 namespace sys = boost::system;
 namespace fs = std::filesystem;
+namespace keywords = boost::log::keywords;
 namespace {
 
 using InputArchive = boost::archive::text_iarchive;
@@ -149,10 +150,10 @@ struct Args {
                 args.serialization_file = vm["state-file"].as<std::string>();
                 std::ifstream file(args.serialization_file);
                 if (file.is_open()) {
-                    std::cout << "State file found" << std::endl;
+                    //std::cout << "State file found" << std::endl;
                     args.have_serialization_file = true;
                 } else{
-                    std::cout << "State file not found" << std::endl;
+                    //std::cout << "State file not found" << std::endl;
                 }
                 args.have_serizalize = true;
             }
@@ -182,6 +183,11 @@ int main(int argc, const char* argv[]) {
         return EXIT_FAILURE;
     }
 
+    boost::log::add_console_log(
+        std::clog,
+        keywords::format = &(logging_handler::LogFormatter),
+        keywords::auto_flush = true);
+
     auto options = ParseCommandLine(argc, argv);
     if (!options) {
         return EXIT_FAILURE;
@@ -191,48 +197,9 @@ int main(int argc, const char* argv[]) {
         std::cerr << "Переменная окружения GAME_DB_URL не установлена" << std::endl;
         return EXIT_FAILURE;
     }
-    std::cout << db_url << std::endl;
-    try {
-        pqxx::connection conn(db_url);
-        pqxx::work txn(conn);
-        pqxx::result r = txn.exec(
-            "SELECT EXISTS ("
-            "   SELECT FROM information_schema.tables "
-            "   WHERE table_schema = 'public' "
-            "   AND table_name = 'retired_players'"
-            ");"
-        );
 
-        bool table_exists = r[0][0].as<bool>();
-
-        if (!table_exists) {
-
-            txn.exec(
-                "CREATE TABLE retired_players ("
-                "   id UUID PRIMARY KEY,"
-                "   name VARCHAR(100),"
-                "   score INT,"
-                "   play_time_ms DOUBLE PRECISION"
-                ");"
-            );
-
-            txn.exec(
-                "CREATE INDEX retired_players_sort_idx ON retired_players("
-                "   score DESC,"
-                "   play_time_ms ASC,"
-                "   name ASC"
-                ");"
-            );
-
-            std::cout << "Таблица 'retired_players' создана." << std::endl;
-        } else {
-            std::cout << "Таблица 'retired_players' уже существует." << std::endl;
-        }
-        txn.commit();
-    } catch (const std::exception& ex) {
-        std::cerr << "Инициализация базы данных не удалась: " << ex.what() << std::endl;
-        std::exit(1);
-    }
+    DatabaseManager dbManager(db_url);
+    dbManager.EnsureTableExists();
 
     try {
         
@@ -251,47 +218,45 @@ int main(int argc, const char* argv[]) {
                 ioc.stop();
             }
         });
-        boost::asio::strand<boost::asio::io_context::executor_type> strand(ioc.get_executor());
+        auto strand = net::make_strand(ioc);
         loot_gen::LootGenerator loot_gen(game.GetLootPeriod(), game.GetLootProbability());
 
         
         // 4. Создаём обработчик HTTP-запросов и связываем его с моделью игры
-        http_handler::RequestHandler handler{game,loot_gen,static_files_root,options->randomize_spawn_points, 
+        auto handler = std::make_shared<http_handler::RequestHandler>(game,loot_gen,static_files_root,options->randomize_spawn_points, 
                                             options->serialize_period, options->serialization_file,
-                                            options->have_save_state_period, strand};
-        logging_handler::LoggingRequestHandler logger_handler{handler};
+                                            options->have_save_state_period, dbManager ,strand);
+        
+       
         if (options->have_serialization_file) {
             std::ifstream serialization_file(options->serialization_file, std::ios_base::binary);
             InputArchive input_archive{serialization_file};
-            handler.LoadStateInformation(input_archive);
+            handler->LoadStateInformation(input_archive);
         }
 
-        std::chrono::milliseconds delta_ms = options->tick_period;
-        if (options->have_tick_period){ 
-            std::cout << "Using tick period:  "<< delta_ms.count() << std::endl;
-            auto ticker = std::make_shared<Ticker>(strand, delta_ms,
-                [&handler](std::chrono::milliseconds delta) { handler.Tick(static_cast<int>(delta.count()));}
-            );
-            ticker->Start();
-        }
+        
+        logging_handler::LoggingRequestHandler logger_handler(handler);
         // 5. Запустить обработчик HTTP-запросов, делегируя их обработчику запросов
         const auto address = net::ip::make_address("0.0.0.0");
         constexpr net::ip::port_type port = 8080;
-        http_server::ServeHttp(ioc, {address, port}, [&logger_handler](auto&& req, auto&& send,
-                               const auto& client_endpoint) {
-            logger_handler(std::forward<decltype(req)>(req), std::forward<decltype(send)>(send), client_endpoint);
-        });
+        http_server::ServeHttp(ioc, {address, port}, logger_handler);
         
-        // Эта надпись сообщает тестам о том, что сервер запущен и готов обрабатывать запросы
-        std::cout << "Server has started..."sv << std::endl;
+        std::chrono::milliseconds delta_ms = options->tick_period;
+        if (options->have_tick_period){
+            auto ticker = std::make_shared<Ticker>(strand, delta_ms,
+                [&handler](std::chrono::milliseconds delta) { handler->Tick(static_cast<int>(delta.count()));}
+            );
+            ticker->Start();
+        }
 
         // 6. Запускаем обработку асинхронных операций
         RunWorkers(std::max(1u, num_threads), [&ioc] {
             ioc.run();
         });
+
         logging_handler::LogStopServer(EXIT_SUCCESS, "");
         if (options->have_serizalize){
-            handler.SaveStateInformation();
+            handler->SaveStateInformation();
         }
     } catch (const std::exception& ex) {
         logging_handler::LogStopServer(EXIT_FAILURE, ex.what());

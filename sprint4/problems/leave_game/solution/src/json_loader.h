@@ -11,23 +11,23 @@ namespace json_loader {
 
 Game LoadGame(const std::filesystem::path& json_path);
 
-std::string GetLogServerStart(const std::string timestamp,
-                            const std::string srv_address,
-                            const int port);
-std::string GetLogServerStop(const std::string timestamp,
-                            const int return_code,
-                            const std::string exception_what);
-std::string GetLogRequest(const std::string timestamp,
-                            const std::string client_address,
-                            const std::string uri,
-                            const std::string http_method);
-std::string GetLogResponse(const std::string timestamp,
-                            const std::string client_address,
-                            const int response_time_msec,
-                            const int response_code,
-                            const std::string content_type);
-std::string GetLogError(const std::string timestamp,
-                            const int error_code,
-                            const std::string error_text,
-                            const std::string where);
+std::string GetLogServerStart(std::string_view timestamp,
+                            std::string_view srv_address,
+                            int port);
+std::string GetLogServerStop(std::string_view timestamp,
+                            int return_code,
+                            std::string_view exception_what);
+std::string GetLogRequest(std::string_view timestamp,
+                            std::string_view client_address,
+                            std::string_view uri,
+                            std::string_view http_method);
+std::string GetLogResponse(std::string_view timestamp,
+                                std::string_view client_address,
+                            int response_time_msec,
+                            int response_code,
+                            std::string_view content_type);
+std::string GetLogError(std::string_view timestamp,
+                            int error_code,
+                            std::string_view error_text,
+                            std::string_view where);
 }  // namespace json_loader

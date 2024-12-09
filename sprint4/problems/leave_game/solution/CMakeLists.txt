@@ -35,6 +35,7 @@ add_executable(game_server
 	src/model_serialization.h
 	src/logging_handler.cpp
 	src/logging_handler.h
+	src/database.h
 )
 target_include_directories(game_server PRIVATE CONAN_PKG::boost)
 target_link_libraries(game_server PRIVATE CONAN_PKG::boost CONAN_PKG::libpqxx Threads::Threads) 
